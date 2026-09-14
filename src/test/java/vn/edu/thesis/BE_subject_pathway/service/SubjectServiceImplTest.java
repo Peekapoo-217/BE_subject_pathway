@@ -59,6 +59,7 @@ class SubjectServiceImplTest {
                 .name("Vật lí")
                 .subjectType("ACADEMIC")
                 .isMandatory(false)
+                .isElective(true)
                 .canonicalSubjectCode(null)
                 .build();
 
@@ -67,10 +68,20 @@ class SubjectServiceImplTest {
                 .name("Công nghệ")
                 .subjectType("ACADEMIC")
                 .isMandatory(false)
+                .isElective(true)
                 .canonicalSubjectCode(null)
                 .build();
 
-        when(subjectRepository.findRootSubjects()).thenReturn(List.of(math, literature, physics, technology));
+        Subject localEdu = Subject.builder()
+                .code("LOCAL_EDU")
+                .name("Giáo dục địa phương")
+                .subjectType("LOCAL")
+                .isMandatory(false)
+                .isElective(false)
+                .canonicalSubjectCode(null)
+                .build();
+
+        when(subjectRepository.findRootSubjects()).thenReturn(List.of(math, literature, physics, technology, localEdu));
 
         SubjectClassificationResponse response = service.getSubjectClassifications();
 
