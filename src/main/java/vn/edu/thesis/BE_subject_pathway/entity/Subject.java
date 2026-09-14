@@ -38,6 +38,9 @@ public class Subject {
     @Column(name = "is_mandatory", nullable = false)
     private Boolean isMandatory;
 
+    @Column(name = "is_elective")
+    private Boolean isElective;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

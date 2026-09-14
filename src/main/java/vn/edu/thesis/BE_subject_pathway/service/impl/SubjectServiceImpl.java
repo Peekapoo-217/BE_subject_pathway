@@ -26,17 +26,15 @@ public class SubjectServiceImpl implements SubjectService {
     public SubjectClassificationResponse getSubjectClassifications() {
         List<Subject> rootSubjects = subjectRepository.findRootSubjects();
 
-        Map<Boolean, List<SubjectDto>> partitioned = rootSubjects.stream()
-                .collect(Collectors.partitioningBy(
-                        s -> Boolean.TRUE.equals(s.getIsMandatory()),
-                        Collectors.mapping(
-                                s -> new SubjectDto(s.getCode(), s.getName()),
-                                Collectors.toList()
-                        )
-                ));
+        List<SubjectDto> mandatorySubjects = rootSubjects.stream()
+                .filter(s -> Boolean.TRUE.equals(s.getIsMandatory()))
+                .map(s -> new SubjectDto(s.getCode(), s.getName()))
+                .toList();
 
-        List<SubjectDto> mandatorySubjects = partitioned.getOrDefault(true, List.of());
-        List<SubjectDto> electiveSubjects = partitioned.getOrDefault(false, List.of());
+        List<SubjectDto> electiveSubjects = rootSubjects.stream()
+                .filter(s -> Boolean.TRUE.equals(s.getIsElective()))
+                .map(s -> new SubjectDto(s.getCode(), s.getName()))
+                .toList();
 
         return new SubjectClassificationResponse(mandatorySubjects, electiveSubjects);
     }
