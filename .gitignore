@@ -1,0 +1,109 @@
+# =========================================================================
+# Maven & Build Artifacts
+# =========================================================================
+target/
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# =========================================================================
+# Environment & Local Secrets
+# =========================================================================
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# =========================================================================
+# Logs
+# =========================================================================
+*.log
+logs/
+
+# =========================================================================
+# JVM Crash Logs & Profiling
+# =========================================================================
+hs_err_pid*
+replay_pid*
+
+# =========================================================================
+# IDEs and Editors
+# =========================================================================
+### Eclipse & Spring Tool Suite (STS) ###
+.apt_generated
+.apt_generated_tests
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+# =========================================================================
+# AI Assistant & Local IDE Configs
+# =========================================================================
+.agent/
+.agents/
+.gemini/
+
+# =========================================================================
+# Operating System & Temporary Files
+# =========================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+*.tmp
+*.bak
+*.swp
+*~
+
+# =========================================================================
+# Documentation Boilerplate
+# =========================================================================
+HELP.md
