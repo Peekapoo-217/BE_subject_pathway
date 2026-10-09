@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.edu.thesis.BE_subject_pathway.dto.request.SubjectSearchRequest;
 import vn.edu.thesis.BE_subject_pathway.dto.response.CombinationDto;
+import vn.edu.thesis.BE_subject_pathway.dto.response.MajorDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectSearchResponse;
+import vn.edu.thesis.BE_subject_pathway.dto.response.UniversityDto;
 import vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionCombinationRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionOfferRepository;
@@ -69,11 +71,24 @@ public class AdmissionSearchServiceImpl implements AdmissionSearchService {
         SearchStatsProjection stats =
                 offerRepository.countMajorsAndUniversities(
                         combinationIds, METHOD_CODE_THPT);
+        List<UniversityDto> universities = offerRepository.findUniversitiesByCombinations(
+                        combinationIds, METHOD_CODE_THPT).stream()
+                .map(university -> new UniversityDto(
+                        university.getUniversityCode(), university.getUniversityName()))
+                .toList();
+        String universityCode = request.getUniversityCode();
+        List<MajorDto> majors = universityCode == null ? List.of() :
+                offerRepository.findMajorsByCombinationsAndUniversity(
+                        combinationIds, METHOD_CODE_THPT, universityCode.trim()).stream()
+                .map(major -> new MajorDto(major.getProgramCode(), major.getProgramName()))
+                .toList();
 
         return new SubjectSearchResponse(
                 combinations.size(),
                 combinations,
                 stats.getTotalMajors(),
-                stats.getTotalUniversities());
+                stats.getTotalUniversities(),
+                universities,
+                majors);
     }
 }

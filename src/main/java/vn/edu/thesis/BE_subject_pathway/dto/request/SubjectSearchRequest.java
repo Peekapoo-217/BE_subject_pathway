@@ -2,6 +2,7 @@ package vn.edu.thesis.BE_subject_pathway.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -22,4 +23,12 @@ public class SubjectSearchRequest {
     @NotEmpty(message = "Danh sach mon hoc khong duoc de trong")
     @Size(max = 4, message = "Chi duoc chon toi da 4 mon hoc")
     private List<@NotBlank(message = "Ma mon hoc khong duoc de trong") String> subjectCodes;
+
+    @Size(max = 20, message = "Ma truong dai hoc qua dai")
+    @Pattern(regexp = "\\S+", message = "Ma truong dai hoc khong hop le")
+    private String universityCode;
+
+    public SubjectSearchRequest(List<String> subjectCodes) {
+        this(subjectCodes, null);
+    }
 }

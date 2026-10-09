@@ -91,6 +91,16 @@ class AdmissionSearchControllerTest {
     }
 
     @Test
+    @DisplayName("POST tra ve 400 khi ma truong dai hoc rong")
+    void searchBySubjects_badRequest_whenUniversityCodeBlank() throws Exception {
+        mockMvc.perform(post("/api/v1/admissions/search-by-subjects")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectCodes\":[\"Toan\"],\"universityCode\":\" \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
     @DisplayName("POST tra ve 404 khi service nem ResourceNotFound")
     void searchBySubjects_notFound() throws Exception {
         when(admissionSearchService.searchBySubjects(any()))

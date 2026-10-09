@@ -21,7 +21,9 @@ import vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionCombinationRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionOfferRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationProjection;
+import vn.edu.thesis.BE_subject_pathway.repository.projection.MajorProjection;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.SearchStatsProjection;
+import vn.edu.thesis.BE_subject_pathway.repository.projection.UniversityProjection;
 import vn.edu.thesis.BE_subject_pathway.service.impl.AdmissionSearchServiceImpl;
 
 /**
@@ -93,7 +95,65 @@ class AdmissionSearchServiceImplTest {
         assertEquals("A00", response.getPossibleCombinations().get(0).getCombinationId());
         assertEquals(12L, response.getTotalMajors());
         assertEquals(5L, response.getTotalUniversities());
+        assertEquals(List.of(), response.getMajors());
         verify(offerRepository).countMajorsAndUniversities(List.of("A00"), "100");
+        verify(offerRepository).findUniversitiesByCombinations(List.of("A00"), "100");
+    }
+
+    @Test
+    @DisplayName("searchBySubjects chi tra nganh cua truong dai hoc da chon")
+    void searchBySubjects_filtersMajorsByUniversity() {
+        SubjectSearchRequest request = new SubjectSearchRequest(List.of("Toan"), "UNI1");
+        when(combinationRepository.findValidCombinations(List.of("Toan")))
+                .thenReturn(List.of(new CombinationProjection() {
+                    @Override
+                    public String getCombinationId() {
+                        return "A00";
+                    }
+
+                    @Override
+                    public String getCombinationDisplay() {
+                        return "A00 - Khoi A";
+                    }
+
+                    @Override
+                    public Short getComponentCount() {
+                        return (short) 3;
+                    }
+                }));
+        when(offerRepository.countMajorsAndUniversities(List.of("A00"), "100"))
+                .thenReturn(stats(12L, 5L));
+        when(offerRepository.findUniversitiesByCombinations(List.of("A00"), "100"))
+                .thenReturn(List.of(new UniversityProjection() {
+                    @Override
+                    public String getUniversityCode() {
+                        return "UNI1";
+                    }
+
+                    @Override
+                    public String getUniversityName() {
+                        return "Truong 1";
+                    }
+                }));
+        when(offerRepository.findMajorsByCombinationsAndUniversity(List.of("A00"), "100", "UNI1"))
+                .thenReturn(List.of(new MajorProjection() {
+                    @Override
+                    public String getProgramCode() {
+                        return "7480201";
+                    }
+
+                    @Override
+                    public String getProgramName() {
+                        return "Cong nghe thong tin";
+                    }
+                }));
+
+        SubjectSearchResponse response = service.searchBySubjects(request);
+
+        assertEquals("UNI1", response.getUniversities().get(0).getUniversityCode());
+        assertEquals(1, response.getMajors().size());
+        assertEquals("7480201", response.getMajors().get(0).getProgramCode());
+        verify(offerRepository).findMajorsByCombinationsAndUniversity(List.of("A00"), "100", "UNI1");
     }
 
     @Test

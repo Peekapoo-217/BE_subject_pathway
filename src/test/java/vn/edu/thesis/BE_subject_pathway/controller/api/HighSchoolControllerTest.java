@@ -18,6 +18,7 @@ import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectGroupDto;
 import vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException;
 import vn.edu.thesis.BE_subject_pathway.service.HighSchoolService;
+import vn.edu.thesis.BE_subject_pathway.service.SubjectGroupRecommendationService;
 
 /**
  * Test slice WebMvc cho HighSchoolController: dinh dang ApiResponse
@@ -34,6 +35,9 @@ class HighSchoolControllerTest {
 
     @MockitoBean
     private HighSchoolService highSchoolService;
+
+    @MockitoBean
+    private SubjectGroupRecommendationService recommendationService;
 
     @Test
     @DisplayName("GET /high-schools tra ve 200 va ApiResponse danh sach truong")
