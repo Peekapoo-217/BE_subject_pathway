@@ -14,10 +14,16 @@ public interface HighSchoolService {
      */
     List<HighSchoolDto> getAllHighSchools();
 
+    /** Lay cac nam hoc co du lieu nhom mon, nam moi nhat truoc. */
+    List<String> getAcademicYearsBySchool(String schoolCode);
+
     /**
      * Lay cac nhom mon hoc (kem danh sach mon) cua mot truong.
      * @throws vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException
      *         khi ma truong khong ton tai (HTTP 404)
      */
     List<SubjectGroupDto> getSubjectGroupsBySchool(String schoolCode);
+
+    /** Lay nhom mon cua mot nam hoc cu the. */
+    List<SubjectGroupDto> getSubjectGroupsBySchool(String schoolCode, String academicYear);
 }

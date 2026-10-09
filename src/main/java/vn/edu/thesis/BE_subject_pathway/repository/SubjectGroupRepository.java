@@ -22,15 +22,40 @@ public interface SubjectGroupRepository extends JpaRepository<Subject, String> {
      * Thu tu alias phai khop getter cua SubjectGroupFlatProjection.
      */
     @Query(value = """
-            SELECT DISTINCT sg.group_code AS groupCode,
+            SELECT DISTINCT sg.academic_year AS academicYear,
+                   sg.group_code AS groupCode,
                    sg.group_name AS groupName,
                    s.code        AS subjectCode,
                    s.name        AS subjectName
             FROM subject_groups sg
             JOIN subjects s ON sg.subject_code = s.code
             WHERE sg.school_code = :schoolCode
+              AND sg.academic_year = :academicYear
             ORDER BY sg.group_code, s.code
             """, nativeQuery = true)
     List<SubjectGroupFlatProjection> findSubjectGroupsBySchool(
-            @Param("schoolCode") String schoolCode);
+            @Param("schoolCode") String schoolCode,
+            @Param("academicYear") String academicYear);
+
+    /** Compatibility query for legacy service callers; year-aware API paths use the overload above. */
+    @Query(value = """
+            SELECT DISTINCT sg.academic_year AS academicYear,
+                   sg.group_code AS groupCode,
+                   sg.group_name AS groupName,
+                   s.code AS subjectCode,
+                   s.name AS subjectName
+            FROM subject_groups sg
+            JOIN subjects s ON sg.subject_code = s.code
+            WHERE sg.school_code = :schoolCode
+            ORDER BY sg.academic_year DESC, sg.group_code, s.code
+            """, nativeQuery = true)
+    List<SubjectGroupFlatProjection> findSubjectGroupsBySchool(@Param("schoolCode") String schoolCode);
+
+    @Query(value = """
+            SELECT DISTINCT academic_year
+            FROM subject_groups
+            WHERE school_code = :schoolCode
+            ORDER BY academic_year DESC
+            """, nativeQuery = true)
+    List<String> findAcademicYearsBySchool(@Param("schoolCode") String schoolCode);
 }

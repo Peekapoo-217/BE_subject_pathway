@@ -7,6 +7,8 @@ package vn.edu.thesis.BE_subject_pathway.repository.projection;
  */
 public interface SubjectGroupFlatProjection {
 
+    String getAcademicYear();
+
     String getGroupCode();
 
     String getGroupName();

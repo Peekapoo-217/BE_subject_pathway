@@ -1,11 +1,11 @@
 package vn.edu.thesis.BE_subject_pathway.service.impl;
 
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import lombok.RequiredArgsConstructor;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectClassificationResponse;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectDto;
 import vn.edu.thesis.BE_subject_pathway.entity.Subject;

@@ -38,31 +38,65 @@ public class HighSchoolServiceImpl implements HighSchoolService {
     }
 
     @Override
-    public List<SubjectGroupDto> getSubjectGroupsBySchool(String schoolCode) {
-        String normalizedCode = schoolCode == null ? "" : schoolCode.trim();
+    public List<String> getAcademicYearsBySchool(String schoolCode) {
+        String normalizedCode = normalizeSchoolCode(schoolCode);
+        ensureSchoolExists(normalizedCode);
+        return subjectGroupRepository.findAcademicYearsBySchool(normalizedCode);
+    }
 
-        if (!highSchoolRepository.existsById(normalizedCode)) {
-            throw new ResourceNotFoundException(
-                    "Truong THPT khong ton tai voi ma: " + normalizedCode);
+    @Override
+    public List<SubjectGroupDto> getSubjectGroupsBySchool(String schoolCode) {
+        String normalizedCode = normalizeSchoolCode(schoolCode);
+        ensureSchoolExists(normalizedCode);
+        List<String> years = subjectGroupRepository.findAcademicYearsBySchool(normalizedCode);
+        if (years.isEmpty()) {
+            // Compatibility fallback for legacy repository implementations; real catalog rows
+            // always yield at least one year from the same PostgreSQL table.
+            return toSubjectGroups(subjectGroupRepository.findSubjectGroupsBySchool(normalizedCode));
+        }
+        return getSubjectGroupsBySchool(normalizedCode, years.get(0));
+    }
+
+    @Override
+    public List<SubjectGroupDto> getSubjectGroupsBySchool(String schoolCode, String academicYear) {
+        String normalizedCode = normalizeSchoolCode(schoolCode);
+        String normalizedYear = academicYear == null ? "" : academicYear.trim();
+        ensureSchoolExists(normalizedCode);
+        if (normalizedYear.isBlank()) {
+            throw new ResourceNotFoundException("Nam hoc khong duoc de trong");
         }
 
-        Map<String, List<SubjectGroupFlatProjection>> groupedByCode =
-                subjectGroupRepository.findSubjectGroupsBySchool(normalizedCode).stream()
-                        .collect(java.util.stream.Collectors.groupingBy(
-                                SubjectGroupFlatProjection::getGroupCode,
-                                LinkedHashMap::new,
-                                java.util.stream.Collectors.toList()));
+        return toSubjectGroups(subjectGroupRepository.findSubjectGroupsBySchool(normalizedCode, normalizedYear));
+    }
 
-        return groupedByCode.entrySet().stream()
-                .map(entry -> {
-                    List<SubjectGroupFlatProjection> rows = entry.getValue();
-                    List<SubjectDto> subjects = rows.stream()
+    private List<SubjectGroupDto> toSubjectGroups(List<SubjectGroupFlatProjection> rows) {
+        Map<String, List<SubjectGroupFlatProjection>> groupedByYearAndCode = rows.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        row -> String.valueOf(row.getAcademicYear()) + "|" + row.getGroupCode(),
+                        LinkedHashMap::new,
+                        java.util.stream.Collectors.toList()));
+
+        return groupedByYearAndCode.values().stream()
+                .map(groupRows -> {
+                    List<SubjectDto> subjects = groupRows.stream()
                             .map(row -> new SubjectDto(
                                     row.getSubjectCode(), row.getSubjectName()))
                             .toList();
-                    String groupName = rows.get(0).getGroupName();
-                    return new SubjectGroupDto(entry.getKey(), groupName, subjects);
+                    String groupName = groupRows.get(0).getGroupName();
+                    return new SubjectGroupDto(
+                            groupRows.get(0).getAcademicYear(), groupRows.get(0).getGroupCode(), groupName, subjects);
                 })
                 .toList();
+    }
+
+    private String normalizeSchoolCode(String schoolCode) {
+        return schoolCode == null ? "" : schoolCode.trim();
+    }
+
+    private void ensureSchoolExists(String schoolCode) {
+        if (!highSchoolRepository.existsById(schoolCode)) {
+            throw new ResourceNotFoundException(
+                    "Truong THPT khong ton tai voi ma: " + schoolCode);
+        }
     }
 }
