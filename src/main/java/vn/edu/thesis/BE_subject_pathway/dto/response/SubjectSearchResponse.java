@@ -16,4 +16,24 @@ public class SubjectSearchResponse {
     private final List<CombinationDto> possibleCombinations;
     private final Long totalMajors;
     private final Long totalUniversities;
+    private final List<UniversityDto> universities;
+    private final List<MajorDto> majors;
+
+    /** Backward-compatible constructor retained for existing callers. */
+    public SubjectSearchResponse(
+            int totalCombinations,
+            List<CombinationDto> possibleCombinations,
+            Long totalMajors,
+            Long totalUniversities) {
+        this(totalCombinations, possibleCombinations, totalMajors, totalUniversities, List.of(), List.of());
+    }
+
+    public SubjectSearchResponse(
+            int totalCombinations,
+            List<CombinationDto> possibleCombinations,
+            Long totalMajors,
+            Long totalUniversities,
+            List<MajorDto> majors) {
+        this(totalCombinations, possibleCombinations, totalMajors, totalUniversities, List.of(), majors);
+    }
 }
