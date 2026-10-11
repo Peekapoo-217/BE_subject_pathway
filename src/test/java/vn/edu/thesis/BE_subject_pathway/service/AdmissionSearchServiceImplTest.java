@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import java.util.List;
 
@@ -21,6 +22,7 @@ import vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionCombinationRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionOfferRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationProjection;
+import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationLabelProjection;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.MajorProjection;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.SearchStatsProjection;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.UniversityProjection;
@@ -87,12 +89,19 @@ class AdmissionSearchServiceImplTest {
                 }));
         when(offerRepository.countMajorsAndUniversities(List.of("A00"), "100"))
                 .thenReturn(stats(12L, 5L));
+        when(combinationRepository.findLabelsByCombinationIds(List.of("A00")))
+                .thenReturn(List.of(new CombinationLabelProjection() {
+                    public String getCombinationId() { return "A00"; }
+                    public String getCode() { return "A00"; }
+                    public String getSubjectDetails() { return "Toán, Vật lí, Hóa học"; }
+                }));
 
         SubjectSearchResponse response = service.searchBySubjects(request);
 
         assertNotNull(response);
         assertEquals(1, response.getTotalCombinations());
         assertEquals("A00", response.getPossibleCombinations().get(0).getCombinationId());
+        assertEquals("A00", response.getPossibleCombinations().get(0).getLabels().get(0).getCode());
         assertEquals(12L, response.getTotalMajors());
         assertEquals(5L, response.getTotalUniversities());
         assertEquals(List.of(), response.getMajors());
@@ -123,6 +132,8 @@ class AdmissionSearchServiceImplTest {
                 }));
         when(offerRepository.countMajorsAndUniversities(List.of("A00"), "100"))
                 .thenReturn(stats(12L, 5L));
+        when(combinationRepository.findLabelsByCombinationIds(List.of("A00")))
+                .thenReturn(List.of());
         when(offerRepository.findUniversitiesByCombinations(List.of("A00"), "100"))
                 .thenReturn(List.of(new UniversityProjection() {
                     @Override
@@ -179,6 +190,53 @@ class AdmissionSearchServiceImplTest {
                 () -> service.searchBySubjects(request));
 
         verify(combinationRepository).findValidCombinations(List.of("Toan", "Ly"));
+        verifyNoInteractions(offerRepository);
+    }
+
+    @Test
+    @DisplayName("Nhom mon THPT duoc gop voi mon bat buoc truoc khi tim to hop")
+    void searchBySubjects_addsMandatorySubjectsWithoutDuplicates() {
+        SubjectSearchRequest request = new SubjectSearchRequest(
+                List.of(" PHYSICS ", "CHEMISTRY", "MATH", "BIOLOGY"));
+        when(subjectRepository.findCodesByIsMandatoryTrue())
+                .thenReturn(List.of(" MATH ", "LITERATURE"));
+        List<String> effectiveCodes = List.of(
+                "PHYSICS", "CHEMISTRY", "MATH", "BIOLOGY", "LITERATURE");
+        CombinationProjection matched = mock(CombinationProjection.class);
+        when(matched.getCombinationId()).thenReturn("CHEMISTRY_MATH_PHYSICS");
+        when(matched.getCombinationDisplay()).thenReturn("Toan - Ly - Hoa");
+        when(matched.getComponentCount()).thenReturn((short) 3);
+        when(combinationRepository.findValidCombinations(effectiveCodes))
+                .thenReturn(List.of(matched));
+        when(offerRepository.countMajorsAndUniversities(
+                List.of("CHEMISTRY_MATH_PHYSICS"), "100"))
+                .thenReturn(stats(0L, 0L));
+
+        SubjectSearchResponse response = service.searchBySubjects(request);
+
+        assertEquals(1, response.getTotalCombinations());
+        assertEquals("CHEMISTRY_MATH_PHYSICS",
+                response.getPossibleCombinations().get(0).getCombinationId());
+        assertEquals(List.of(), response.getUniversities());
+        assertEquals(List.of(), response.getMajors());
+        verify(combinationRepository).findValidCombinations(effectiveCodes);
+        verify(offerRepository).findUniversitiesByCombinations(
+                List.of("CHEMISTRY_MATH_PHYSICS"), "100");
+    }
+
+    @Test
+    @DisplayName("Khong tim thay to hop thi khong truy van offer")
+    void searchBySubjects_withMandatoryCodesStopsBeforeOfferLookupWhenNoMatch() {
+        SubjectSearchRequest request = new SubjectSearchRequest(List.of("INFORMATICS"));
+        when(subjectRepository.findCodesByIsMandatoryTrue())
+                .thenReturn(List.of("MATH", "LITERATURE"));
+        when(combinationRepository.findValidCombinations(
+                List.of("INFORMATICS", "MATH", "LITERATURE")))
+                .thenReturn(List.of());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.searchBySubjects(request));
+
         verifyNoInteractions(offerRepository);
     }
 }
