@@ -34,7 +34,8 @@ public class AdmissionSearchController {
             summary = "Tra cuu to hop, truong va nganh theo mon hoc",
             description = "Tu danh sach toi da 4 ma mon tu chon, he thong bo sung cac mon bat buoc "
                     + "va tim to hop xet tuyen phu hop. Neu co universityCode, response tra them "
-                    + "danh sach nganh cua truong dai hoc do.")
+                    + "danh sach nganh cua truong dai hoc do. Moi to hop co labels gom ma to hop "
+                    + "va mon chi tiet da xac minh tu danh muc ngoai, hoac mang rong neu chua lien ket.")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
                 responseCode = "200", description = "Tra cuu thanh cong"),

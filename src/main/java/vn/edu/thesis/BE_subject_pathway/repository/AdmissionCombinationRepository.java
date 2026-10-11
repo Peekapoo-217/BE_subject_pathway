@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import vn.edu.thesis.BE_subject_pathway.entity.AdmissionCombination;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationProjection;
+import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationLabelProjection;
 
 /**
  * Repository cho AdmissionCombination.
@@ -36,4 +37,18 @@ public interface AdmissionCombinationRepository
             """, nativeQuery = true)
     List<CombinationProjection> findValidCombinations(
             @Param("subjectCodes") List<String> subjectCodes);
+
+    /** Label rows from the newest imported catalogue snapshot for matched combinations. */
+    @Query(value = """
+            SELECT l.canonical_combination_id AS combinationId,
+                   l.code AS code,
+                   l.subject_details AS subjectDetails
+            FROM admission_combination_labels l
+            WHERE l.canonical_combination_id IN (:combinationIds)
+              AND l.retrieved_at = (
+                  SELECT MAX(latest.retrieved_at) FROM admission_combination_labels latest)
+            ORDER BY l.canonical_combination_id, l.code
+            """, nativeQuery = true)
+    List<CombinationLabelProjection> findLabelsByCombinationIds(
+            @Param("combinationIds") List<String> combinationIds);
 }

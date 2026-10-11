@@ -3,12 +3,15 @@ package vn.edu.thesis.BE_subject_pathway.service.impl;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.edu.thesis.BE_subject_pathway.dto.request.SubjectSearchRequest;
 import vn.edu.thesis.BE_subject_pathway.dto.response.CombinationDto;
+import vn.edu.thesis.BE_subject_pathway.dto.response.CombinationLabelDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.MajorDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectSearchResponse;
 import vn.edu.thesis.BE_subject_pathway.dto.response.UniversityDto;
@@ -17,6 +20,7 @@ import vn.edu.thesis.BE_subject_pathway.repository.AdmissionCombinationRepositor
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionOfferRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.SubjectRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.SearchStatsProjection;
+import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationProjection;
 import vn.edu.thesis.BE_subject_pathway.service.AdmissionSearchService;
 
 /**
@@ -51,21 +55,33 @@ public class AdmissionSearchServiceImpl implements AdmissionSearchService {
         Set<String> effectiveCodes = new LinkedHashSet<>(requestedCodes);
         effectiveCodes.addAll(mandatoryCodes);
 
-        List<CombinationDto> combinations = combinationRepository
-                .findValidCombinations(new ArrayList<>(effectiveCodes)).stream()
-                .map(p -> new CombinationDto(
-                        p.getCombinationId(),
-                        p.getCombinationDisplay(),
-                        p.getComponentCount()))
-                .toList();
+        List<CombinationProjection> matchedCombinations = combinationRepository
+                .findValidCombinations(new ArrayList<>(effectiveCodes));
 
-        if (combinations.isEmpty()) {
+        if (matchedCombinations.isEmpty()) {
             throw new ResourceNotFoundException(
                     "Khong tim thay to hop xet tuyen nao phu hop voi cac mon hoc da chon");
         }
 
-        List<String> combinationIds = combinations.stream()
-                .map(CombinationDto::getCombinationId)
+        List<String> combinationIds = matchedCombinations.stream()
+                .map(CombinationProjection::getCombinationId)
+                .toList();
+
+        Map<String, List<CombinationLabelDto>> labelsByCombination = combinationRepository
+                .findLabelsByCombinationIds(combinationIds).stream()
+                .collect(Collectors.groupingBy(
+                        label -> label.getCombinationId(),
+                        Collectors.mapping(
+                                label -> new CombinationLabelDto(
+                                        label.getCode(), label.getSubjectDetails()),
+                                Collectors.toList())));
+        List<CombinationDto> combinations = matchedCombinations.stream()
+                .map(combination -> new CombinationDto(
+                        combination.getCombinationId(),
+                        combination.getCombinationDisplay(),
+                        combination.getComponentCount(),
+                        labelsByCombination.getOrDefault(
+                                combination.getCombinationId(), List.of())))
                 .toList();
 
         SearchStatsProjection stats =

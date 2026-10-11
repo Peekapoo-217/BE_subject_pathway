@@ -16,6 +16,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import vn.edu.thesis.BE_subject_pathway.dto.response.CombinationDto;
+import vn.edu.thesis.BE_subject_pathway.dto.response.CombinationLabelDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectSearchResponse;
 import vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException;
 import vn.edu.thesis.BE_subject_pathway.service.AdmissionSearchService;
@@ -41,7 +42,8 @@ class AdmissionSearchControllerTest {
     void searchBySubjects_ok() throws Exception {
         SubjectSearchResponse response = new SubjectSearchResponse(
                 1,
-                List.of(new CombinationDto("A00", "A00 - Khoi A", (short) 3)),
+                List.of(new CombinationDto("A00", "A00 - Khoi A", (short) 3,
+                        List.of(new CombinationLabelDto("A00", "Toán, Vật lí, Hóa học")))),
                 12L, 5L);
         when(admissionSearchService.searchBySubjects(any())).thenReturn(response);
 
@@ -52,6 +54,8 @@ class AdmissionSearchControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.totalCombinations").value(1))
                 .andExpect(jsonPath("$.data.possibleCombinations[0].combinationId")
+                        .value("A00"))
+                .andExpect(jsonPath("$.data.possibleCombinations[0].labels[0].code")
                         .value("A00"))
                 .andExpect(jsonPath("$.data.totalMajors").value(12))
                 .andExpect(jsonPath("$.data.totalUniversities").value(5));

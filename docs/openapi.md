@@ -19,5 +19,9 @@ The documented application endpoints are:
 | `GET` | `/api/v1/subjects/classifications` | List mandatory and elective subjects. |
 | `POST` | `/api/v1/admissions/search-by-subjects` | Find matching combinations and universities; optionally list majors for one university. |
 
+Each `possibleCombinations[]` item includes `labels: [{code, subjectDetails}]` from
+the newest imported combination catalogue snapshot. `labels` is empty if no
+catalogue row can be linked unambiguously to the canonical combination.
+
 All application endpoints use the common `ApiResponse<T>` envelope. Validation failures return
 HTTP `400`, missing business data returns HTTP `404`, and unexpected errors return HTTP `500`.
