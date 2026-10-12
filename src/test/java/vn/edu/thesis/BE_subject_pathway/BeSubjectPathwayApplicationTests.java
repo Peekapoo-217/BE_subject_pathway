@@ -23,7 +23,8 @@ import vn.edu.thesis.BE_subject_pathway.repository.SubjectGroupRepository;
  * tao - thay the bang mock de van verify duoc wiring
  * Controller -> Service -> Repository.
  */
-@SpringBootTest(properties = "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration")
+@SpringBootTest(properties = {"spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
+        "app.admin.enabled=false"})
 @AutoConfigureMockMvc
 class BeSubjectPathwayApplicationTests {
 
