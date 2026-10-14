@@ -63,5 +63,38 @@ class AdminPaginationPostgresTest {
     void draftsAcceptTimestampCursor() {
         String after = cursors.encode(OffsetDateTime.now() + "|" + UUID.randomUUID() + "|SUBMITTED");
         assertNotNull(documents.listDrafts(20, after, "SUBMITTED").get("items"));
+        assertNotNull(documents.listDrafts(20, null, "DRAFT,SUBMITTED").get("items"));
+    }
+
+    @Test
+    void draftsExposeJsonbAndSqlArraysAsApiLists() {
+        Map<String, Object> page = documents.listDrafts(20, null, "DRAFT,SUBMITTED");
+        List<?> items = (List<?>) page.get("items");
+        assertFalse(items.isEmpty(), "The PostgreSQL regression database must contain at least one draft");
+
+        for (Object value : items) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> draft = (Map<String, Object>) value;
+            assertInstanceOf(List.class, draft.get("subjectCodes"));
+            assertInstanceOf(List.class, draft.get("sourcePages"));
+            assertTrue(((List<?>) draft.get("subjectCodes")).stream().allMatch(String.class::isInstance));
+            assertTrue(((List<?>) draft.get("sourcePages")).stream().allMatch(Integer.class::isInstance));
+        }
+    }
+
+    @Test
+    void draftGroupsExposeSchoolCodeFromActualPostgresQuery() {
+        var page = documents.listDraftGroups(20, null, "DRAFT,SUBMITTED");
+        assertFalse(page.items().isEmpty(), "The PostgreSQL regression database must contain at least one draft group");
+
+        for (var group : page.items()) {
+            assertTrue(group.draftCount() > 0);
+            if (group.groupKey().startsWith("S:")) {
+                assertEquals(group.groupKey().substring(2), group.schoolCode());
+            } else {
+                assertTrue(group.groupKey().startsWith("P:"));
+                assertNull(group.schoolCode());
+            }
+        }
     }
 }

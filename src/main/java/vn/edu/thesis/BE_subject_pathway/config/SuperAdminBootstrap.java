@@ -26,11 +26,11 @@ public class SuperAdminBootstrap implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        Integer count = jdbc.queryForObject("SELECT count(*) FROM admin.app_users WHERE role='SUPER_ADMIN'",
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM public.app_users WHERE role='SUPER_ADMIN'",
                 Integer.class);
         if (count != null && count == 0 && !username.isBlank() && !password.isBlank()) {
             jdbc.update(
-                    "INSERT INTO admin.app_users(username, password_hash, role) VALUES (?, ?, 'SUPER_ADMIN') ON CONFLICT(username) DO NOTHING",
+                    "INSERT INTO public.app_users(username, password_hash, role) VALUES (?, ?, 'SUPER_ADMIN') ON CONFLICT(username) DO NOTHING",
                     username.trim(), encoder.encode(password));
         }
     }

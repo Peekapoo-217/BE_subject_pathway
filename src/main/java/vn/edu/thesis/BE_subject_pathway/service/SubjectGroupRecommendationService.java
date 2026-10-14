@@ -22,7 +22,7 @@ import vn.edu.thesis.BE_subject_pathway.repository.HighSchoolRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.Neo4jSubjectGroupRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.Neo4jSubjectGroupRepository.SubjectGroupData;
 
-/** Xep hang minh bach cac nhom 4 mon theo so thich va tu tin tu khai bao. */
+/** Xep hang minh bach cac nhom tu 1 den 4 mon theo so thich va tu tin tu khai bao. */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -50,7 +50,7 @@ public class SubjectGroupRecommendationService {
             throw new ResourceNotFoundException("Khong co du lieu nhom mon cho nam hoc: " + academicYear);
         }
 
-        List<SubjectGroupData> groups = graphRepository.findFourSubjectGroups(normalizedSchoolCode, academicYear);
+        List<SubjectGroupData> groups = graphRepository.findSubjectGroups(normalizedSchoolCode, academicYear);
         if (groups.isEmpty()) {
             return new SubjectGroupRecommendationsResponse(
                     normalizedSchoolCode, academicYear, request.getTopK(), 0, List.of());

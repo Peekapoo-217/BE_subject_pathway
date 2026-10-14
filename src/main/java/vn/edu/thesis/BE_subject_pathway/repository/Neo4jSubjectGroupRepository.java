@@ -20,12 +20,12 @@ public class Neo4jSubjectGroupRepository {
             ORDER BY academicYear DESC
             """;
 
-    private static final String FIND_FOUR_SUBJECT_GROUPS = """
+    private static final String FIND_SUBJECT_GROUPS = """
             MATCH (:HighSchool {code: $schoolCode})-[:OFFERS_GROUP]->(group:SubjectGroup)
             WHERE group.academic_year = $academicYear
             MATCH (group)-[:INCLUDES_SUBJECT]->(subject:Subject)
             WITH group, collect(DISTINCT {code: subject.code, name: subject.name}) AS subjects
-            WHERE size(subjects) = 4
+            WHERE size(subjects) >= 1 AND size(subjects) <= 4
             RETURN group.group_code AS groupCode,
                    group.name AS groupName,
                    group.academic_year AS academicYear,
@@ -46,9 +46,9 @@ public class Neo4jSubjectGroupRepository {
         }
     }
 
-    public List<SubjectGroupData> findFourSubjectGroups(String schoolCode, String academicYear) {
+    public List<SubjectGroupData> findSubjectGroups(String schoolCode, String academicYear) {
         try (var session = driver.session(SessionConfig.forDatabase(database))) {
-            return session.run(FIND_FOUR_SUBJECT_GROUPS,
+            return session.run(FIND_SUBJECT_GROUPS,
                             java.util.Map.of("schoolCode", schoolCode, "academicYear", academicYear))
                     .list(record -> {
                         List<SubjectDto> subjects = new ArrayList<>(record.get("subjects").asList(value ->

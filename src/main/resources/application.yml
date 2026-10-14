@@ -1,6 +1,10 @@
 # BE_subject_pathway - Spring Boot 4.1.0
 # Credentials come from environment variables (see .env.example); never hardcode.
 spring:
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 51MB
   data:
     redis:
       repositories:
@@ -40,6 +44,8 @@ spring:
 
 # CORS - danh sach origin FE duoc phep, phan cach bang dau phay
 app:
+  locations:
+    api-url: ${PROVINCES_API_URL:https://34tinhthanh.com/api/provinces}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
   auth:

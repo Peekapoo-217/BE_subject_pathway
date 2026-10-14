@@ -12,7 +12,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** Dau vao xep hang nhom 4 mon theo so thich va muc tu tin cua hoc sinh. */
+/** Dau vao xep hang nhom mon 1-4 mon theo so thich va muc tu tin cua hoc sinh. */
 @Getter
 @Setter
 @NoArgsConstructor

@@ -37,7 +37,8 @@ public class AdminManagementController {
     public record CreateCombinationRequest(@NotBlank String display, @Size(min=2,max=10) List<String> subjectCodes) {}
     public record DisplayRequest(@NotBlank String display) {}
     public record LlmConfigRequest(@NotBlank String purpose, @NotBlank String endpoint,
-                                   @NotBlank String model, @NotBlank String apiKey, boolean active) {}
+                                   @NotBlank String model, @jakarta.validation.constraints.Size(max=2000) String apiKey,
+                                   boolean active) {}
 
     @GetMapping("/users")
     public ApiResponse<Map<String,Object>> users(@RequestParam(defaultValue="20") int size,

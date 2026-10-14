@@ -15,28 +15,28 @@ public class AdminManagementRepository {
 
     public List<Map<String, Object>> listUsers(String role, String createdAt, String id, int limit) {
         return jdbc.queryForList("SELECT id::text AS id, username, role, active, created_at AS \"createdAt\" "
-                + "FROM admin.app_users WHERE (?::text IS NULL OR role=?) AND (?::timestamptz IS NULL OR (created_at,id)<(?::timestamptz,?::uuid)) "
+                + "FROM public.app_users WHERE (?::text IS NULL OR role=?) AND (?::timestamptz IS NULL OR (created_at,id)<(?::timestamptz,?::uuid)) "
                 + "ORDER BY created_at DESC,id DESC LIMIT ?", role, role, createdAt, createdAt, id, limit);
     }
 
     public Map<String, Object> createUser(String id, String username, String passwordHash, String role) {
-        jdbc.update("INSERT INTO admin.app_users(id,username,password_hash,role) VALUES (?::uuid,?,?,?)",
+        jdbc.update("INSERT INTO public.app_users(id,username,password_hash,role) VALUES (?::uuid,?,?,?)",
                 id, username, passwordHash, role);
-        return jdbc.queryForMap("SELECT id::text AS id, username, role, active, created_at AS \"createdAt\" FROM admin.app_users WHERE id=?::uuid", id);
+        return jdbc.queryForMap("SELECT id::text AS id, username, role, active, created_at AS \"createdAt\" FROM public.app_users WHERE id=?::uuid", id);
     }
 
     public boolean isLastActiveSuperAdmin(String id) {
-        Integer remaining = jdbc.queryForObject("SELECT count(*) FROM admin.app_users WHERE role='SUPER_ADMIN' AND active AND id<>?::uuid", Integer.class, id);
-        Integer target = jdbc.queryForObject("SELECT count(*) FROM admin.app_users WHERE id=?::uuid AND role='SUPER_ADMIN' AND active", Integer.class, id);
+        Integer remaining = jdbc.queryForObject("SELECT count(*) FROM public.app_users WHERE role='SUPER_ADMIN' AND active AND id<>?::uuid", Integer.class, id);
+        Integer target = jdbc.queryForObject("SELECT count(*) FROM public.app_users WHERE id=?::uuid AND role='SUPER_ADMIN' AND active", Integer.class, id);
         return target != null && target == 1 && (remaining == null || remaining == 0);
     }
 
     public int updateUser(String id, String role, boolean active) {
-        return jdbc.update("UPDATE admin.app_users SET role=?,active=?,token_version=token_version+1,updated_at=now() WHERE id=?::uuid", role, active, id);
+        return jdbc.update("UPDATE public.app_users SET role=?,active=?,token_version=token_version+1,updated_at=now() WHERE id=?::uuid", role, active, id);
     }
 
     public int resetPassword(String id, String hash) {
-        return jdbc.update("UPDATE admin.app_users SET password_hash=?,token_version=token_version+1,updated_at=now() WHERE id=?::uuid", hash, id);
+        return jdbc.update("UPDATE public.app_users SET password_hash=?,token_version=token_version+1,updated_at=now() WHERE id=?::uuid", hash, id);
     }
 
     public List<Map<String, Object>> listCombinations(Boolean active, String after, int limit) {
@@ -70,7 +70,8 @@ public class AdminManagementRepository {
     }
 
     public Map<String, Object> activeLlmConfiguration(String purpose) {
-        return jdbc.queryForMap("SELECT endpoint,model,encrypted_api_key FROM admin.llm_configurations WHERE purpose=? AND active=true", purpose);
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT endpoint,model,encrypted_api_key FROM admin.llm_configurations WHERE purpose=? AND active=true", purpose);
+        return rows.isEmpty() ? Map.of() : rows.get(0);
     }
 
     public void saveLlmConfiguration(String actorId, String purpose, String endpoint, String model, String encrypted, boolean active) {

@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.client.RestClient;
 import vn.edu.thesis.BE_subject_pathway.controller.api.AdminDocumentController;
 import vn.edu.thesis.BE_subject_pathway.controller.api.AdminManagementController;
 import vn.edu.thesis.BE_subject_pathway.controller.api.AuthController;
@@ -22,6 +23,7 @@ import vn.edu.thesis.BE_subject_pathway.service.admin.RedisSessionStore;
 import vn.edu.thesis.BE_subject_pathway.service.admin.CursorCodec;
 import vn.edu.thesis.BE_subject_pathway.service.admin.R2StorageService;
 import vn.edu.thesis.BE_subject_pathway.service.admin.SchoolDocumentService;
+import vn.edu.thesis.BE_subject_pathway.service.admin.ProvinceCatalogService;
 import vn.edu.thesis.BE_subject_pathway.service.admin.TokenService;
 import vn.edu.thesis.BE_subject_pathway.repository.admin.AdminManagementRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.admin.AuthAccountRepository;
@@ -31,11 +33,12 @@ class AdminWiringTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JdbcTemplateAutoConfiguration.class))
             .withUserConfiguration(SchoolDocumentRepository.class, AuthAccountRepository.class,
-                    AdminManagementRepository.class, SchoolDocumentService.class, AuthService.class, AdminManagementService.class,
+                    AdminManagementRepository.class, ProvinceCatalogService.class, SchoolDocumentService.class, AuthService.class, AdminManagementService.class,
                     AdminDocumentController.class, AuthController.class, AdminManagementController.class,
                     SuperAdminBootstrap.class)
             .withBean(RedisSessionStore.class, () -> mock(RedisSessionStore.class))
             .withBean(DataSource.class, () -> mock(DataSource.class))
+            .withBean(RestClient.Builder.class, RestClient::builder)
             .withBean(R2StorageService.class, () -> mock(R2StorageService.class))
             .withBean(CursorCodec.class, () -> new CursorCodec("test-secret-with-at-least-32-bytes"))
             .withBean(TokenService.class, () -> new TokenService("test-secret-with-at-least-32-bytes", 900))

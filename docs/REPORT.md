@@ -1,5 +1,40 @@
 # REPORT - BE_subject_pathway
 
+## Sửa lỗi 500 khi tải nhóm bản nháp — 2026-10-14
+
+- [x] Tái hiện bằng `AdminPaginationPostgresTest` trên PostgreSQL ở chế độ chỉ đọc: `listDraftGroups` lỗi SQLSTATE `42703` vì CTE `grouped` không xuất cột `school_code`.
+- [x] Bổ sung `min(doc.school_code) AS school_code` vào CTE; nhóm trường đã đăng ký trả đúng mã trường, nhóm trường khai báo mới trả `null`.
+- [x] Regression test chuyển từ lỗi sang đạt; `.\mvnw.cmd test` chạy 81 test, 0 lỗi, 10 test tích hợp bỏ qua theo cấu hình mặc định.
+- [x] Build/restart backend bằng `docker compose up -d --build backend`; đăng nhập SUPER_ADMIN và gọi `GET /api/v1/admin/documents/draft-groups?size=20` nhận HTTP 200, `success=true`, 1 nhóm. Đăng xuất phiên kiểm tra sau khi lấy CSRF token mới.
+
+## Bỏ thêm phiên bản, xóa tài liệu và nhóm bản nháp — 2026-10-14
+
+- [x] T1. Xóa endpoint/service/repository upload phiên bản; mỗi lần upload tạo một tài liệu mới. Giữ các hàng phiên bản lịch sử làm nguồn R2/OCR.
+- [x] T2. DELETE của ADMIN chuyển sang `DELETE_REQUESTED`; SUPER_ADMIN xóa mềm trực tiếp hoặc duyệt yêu cầu. Khi xóa cuối cùng: hủy job PENDING/RUNNING/RETRY, lưu snapshot audit, tách khóa ngoại audit và xóa nháp chưa công bố; giữ draft/nhóm môn đã công bố và file R2.
+- [x] T3. Thêm SUPER_ADMIN hard-delete từng draft chưa công bố; ghi snapshot audit, không đổi tài liệu nguồn. Trả HTTP 409 nếu version đó đang có job trích xuất.
+- [x] T4. Nhóm bản nháp theo school code hoặc tên/địa điểm trường khai báo và năm học; thêm DTO, keyset cursor, metadata version nguồn. Chặn sửa/gửi/công bố khi tài liệu chờ xóa.
+- [x] T5. Flyway V7 thêm `CANCELLED`, khóa nhóm trường/năm học được sinh tự động và index truy vấn audit theo draft. Đã thử V1–V7 trên PostgreSQL container dùng riêng; backend sau đó áp dụng V7 vào PostgreSQL local lúc 03:07 UTC ngày 2026-10-14 (Flyway version 7 thành công).
+- [x] T6. Cập nhật OpenAPI và tài liệu vận hành. Kiểm tra gần nhất: `.\mvnw.cmd test` (81 test, 0 lỗi, 10 test tích hợp bỏ qua theo cấu hình mặc định); worker 57/57; Angular 50/50 và `npm run build` thành công.
+
+## Drafts endpoint JSON serialization fix — 2026-10-14
+
+- [x] Replace implicit JDBC row serialization for extracted drafts with explicit mapping: PostgreSQL `jsonb` `subject_codes` becomes `string[]`; `integer[]` `source_pages` becomes `number[]`. Invalid stored values fail during row mapping before the response is serialized.
+- [x] Add unit regression coverage and a read-only PostgreSQL integration assertion for draft field types.
+- [x] Verification: `mvnw.cmd test -q` completed with 73 tests, 0 failures/errors, 9 skipped; PostgreSQL regression ran 5/5.
+- [x] Rebuild and restart backend container; authenticated `GET /api/v1/admin/documents/drafts?size=20` returned HTTP 200 with valid JSON, 3 drafts, and the expected array element types.
+
+## OCR–ETL ảnh tài liệu THPT — 2026-10-13
+
+- [x] Mở rộng upload và upload phiên bản cho PNG, JPEG, WebP (10 MiB) và giữ PDF (50 MiB); kiểm tra MIME/chữ ký, lưu đúng `content_type` và khóa R2. Không cần migration vì schema phiên bản đã có `content_type`.
+- [x] Bổ sung API thử lại job thất bại của phiên bản mới nhất, `errorCode` trong danh sách tài liệu, trạng thái bản nháp và quyền xem bản nháp `DRAFT` cho SUPER_ADMIN. Swagger và hướng dẫn vận hành đã cập nhật.
+- [x] Kiểm tra: `.\mvnw.cmd test -q` thành công; `SchoolDocumentServiceTest` kiểm tra PNG, PDF, file giả và thử lại; `AdminPaginationPostgresTest` chạy read-only trên PostgreSQL và xác nhận truy vấn bản nháp nhiều trạng thái.
+- [ ] Chạy thử upload ảnh/R2/job trên bản triển khai mới. Container backend đang chạy chưa được cập nhật trong đợt sửa code này.
+
+### Cập nhật contract vận hành OCR ảnh — 2026-10-13
+
+- [x] Cập nhật tài liệu: worker OCR ảnh bằng Tesseract trước khi gọi model `EXTRACTION`; model chỉ nhận văn bản nên không cần vision.
+- [x] Xác nhận API, schema PostgreSQL và quy trình duyệt draft không đổi; OCR text không được lưu vào database.
+
 ## Kiểm tra phân lớp và xác minh lỗi 500 admin — 2026-10-12
 
 - [x] Rà soát: `AdminManagementService`, `SchoolDocumentService`, `AuthService` gọi `JdbcTemplate` trực tiếp, SQL nằm ở lớp service.
@@ -113,3 +148,33 @@ Chạy migration V3 trước importer của `data-scrawler`. Bảng mới phụ 
 - [x] Kiểm tra: `.\mvnw.cmd -Dtest=AdmissionSearchServiceImplTest test` (6 test đạt); `.\mvnw.cmd test` (25 test đạt).
 
 Các test là unit test với repository mock; chúng xác nhận luồng điều phối của service, không kiểm chứng SQL native query với cơ sở dữ liệu thật. Không thay đổi API hoặc logic production trong đợt kiểm thử này.
+
+## Điều chỉnh workflow tài liệu THPT và schema admin — 2026-10-14
+
+- [x] V8 đổi `admin.extraction_jobs` thành `admin.extraction_log`, chuyển `app_users` và `refresh_sessions` về `public`, bỏ `proposed_school_location` và tái tạo key nhóm trường theo tên chuẩn hóa.
+- [x] Ràng buộc nhóm môn cho phép 1–4 mã môn; service và worker tiếp tục kiểm tra mã hợp lệ, không trùng.
+- [x] Gỡ endpoint duyệt riêng từng nháp. SUPER_ADMIN công bố toàn bộ bản nháp đã gửi duyệt của một trường/năm học trong transaction; backend khóa và so sánh đúng danh sách ID, từ chối batch stale, đang OCR, sai môn hoặc trùng mã.
+- [x] Ghi outbox PostgreSQL trong transaction; API trả batch ID/trạng thái chờ, worker khác project sẽ đồng bộ Neo4j và retry.
+- [x] Cập nhật Swagger, tài liệu vận hành và test service/controller/recommendation.
+- [x] Kiểm tra focused backend tests; full suite `mvnw.cmd -q test`: 93 test, 0 lỗi/thất bại, 10 test integration được skip do không bật PostgreSQL/Memurai test.
+
+Migration V8 được tạo trong source nhưng chưa áp dụng lên database nào trong phiên này. Backend unit tests không kết nối PostgreSQL thật; cần backend khởi động với database mục tiêu để Flyway apply V8 trước khi chạy các worker bản mới.
+
+## Điều chỉnh quyền công bố nhóm môn THPT — 2026-10-14
+
+- [x] Chỉ ADMIN được gửi bản nháp sang trạng thái `SUBMITTED`; SUPER_ADMIN có thể công bố trực tiếp các bản nháp `DRAFT` hoặc `SUBMITTED` sau khi xác nhận đã rà soát toàn bộ lô trường/năm học.
+- [x] Giữ công bố PostgreSQL trong transaction và tạo outbox Neo4j như cũ; không thêm migration và không ghi nhóm THPT vào bảng tuyển sinh đại học.
+- [x] Cập nhật mô tả endpoint và hướng dẫn vận hành; thêm regression test cho công bố trực tiếp và lô có trạng thái trộn.
+- [x] Kiểm tra: `.\mvnw.cmd -Dtest=SchoolDocumentServiceTest,AdminDocumentControllerTest test` (25 đạt); `.\mvnw.cmd -q test` (95 test, 0 lỗi/thất bại, 10 test bỏ qua do cấu hình tích hợp mặc định).
+- [x] Rebuild/recreate service backend; `GET /actuator/health` trả `UP`. Không gọi API công bố nên không thay đổi dữ liệu PostgreSQL.
+
+## Năm học, địa điểm và mã trường THPT — 2026-10-14
+
+- [x] B1. Thêm year picker dạng lịch năm cho form upload và sửa tài liệu; API mới lưu năm bắt đầu `YYYY` (1900–2199). Form sửa hiển thị năm bắt đầu của dữ liệu cũ dạng `YYYY-YYYY`; không tự ghi sửa các bản ghi hiện có.
+- [x] B2. Tạo mã trường bằng chữ cái đầu của từng từ sau `THPT` (`Trường THPT Tôn Đức Thắng` → `TĐT`); cho phép nhập mã khác, kiểm tra mã đã dùng và kiểm tra trùng trường theo tên/tỉnh. Nếu đúng trường đã có, UI cho chọn lại trường hiện hữu.
+- [x] B3. Thêm API proxy danh sách tỉnh, cache memory 24 giờ và cấu hình URL qua `PROVINCES_API_URL`; địa điểm/mã trường khai báo được lưu ở `admin.school_documents` trong thời gian chờ duyệt.
+- [x] B4. Tạo Flyway V9 để lưu địa điểm/mã đề xuất và cập nhật generated `school_group_key` nhóm trường khai báo theo tên + tỉnh. Khi publish, dữ liệu dùng luồng hiện tại để ghi `public.high_schools` và tạo outbox đồng bộ Neo4j.
+- [x] B5. Rà soát query: SQL trang quản trị nhóm theo generated `school_group_key` và lấy địa điểm từ trường đã đăng ký hoặc đề xuất; V9 cập nhật định nghĩa key cho trường mới. API tra cứu công khai và Neo4j tiếp tục so sánh chính xác `school_code`/`academic_year`, nên không cần đổi query/Cypher công khai; graph projection hiện có đọc `high_schools.location` sau khi publish.
+- [x] B6. Cập nhật OpenAPI, hướng dẫn vận hành và report. Không sửa `data-scrawler` vì projection worker hiện tại đã đồng bộ trường/nhóm/năm qua outbox.
+- [x] Kiểm tra focused: `SchoolCodeGeneratorTest`, `ProvinceCatalogServiceTest`, `SchoolDocumentServiceTest`, `AdminDocumentControllerTest`; full `mvnw.cmd -q test`: 105 test, 0 lỗi/thất bại, 10 test tích hợp bị skip theo cấu hình hiện tại.
+- [ ] Triển khai migration V9 vào database mục tiêu: chưa thực hiện trong phiên này. Chưa có thay đổi dữ liệu PostgreSQL/Neo4j; bản ghi Tôn Đức Thắng được để nguyên theo yêu cầu.
