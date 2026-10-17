@@ -1,27 +1,10 @@
 package vn.edu.thesis.BE_subject_pathway.service.admin;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.time.Duration;
-import java.net.http.HttpClient;
-
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.web.client.RestClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,27 +15,12 @@ import vn.edu.thesis.BE_subject_pathway.repository.admin.AdminManagementReposito
 public class AdminManagementService {
     private final AdminManagementRepository repository;
     private final PasswordEncoder passwords;
-    private final String encryptionKey;
-    private final String ragInternalUrl;
-    private final String internalServiceToken;
-    private final RestClient ragClient;
     private final CursorCodec cursors;
-    private final SecureRandom random = new SecureRandom();
 
-    public AdminManagementService(AdminManagementRepository repository, PasswordEncoder passwords, CursorCodec cursors,
-            @Value("${LLM_CONFIG_ENCRYPTION_KEY:}") String encryptionKey,
-            @Value("${RAG_INTERNAL_API_URL:http://localhost:8000}") String ragInternalUrl,
-            @Value("${INTERNAL_SERVICE_TOKEN:}") String internalServiceToken) {
+    public AdminManagementService(AdminManagementRepository repository, PasswordEncoder passwords, CursorCodec cursors) {
         this.repository = repository;
         this.passwords = passwords;
         this.cursors = cursors;
-        this.encryptionKey = encryptionKey;
-        this.ragInternalUrl = ragInternalUrl;
-        this.internalServiceToken = internalServiceToken;
-        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build());
-        requestFactory.setReadTimeout(Duration.ofSeconds(3));
-        this.ragClient = RestClient.builder().requestFactory(requestFactory).build();
     }
 
     public Map<String, Object> listUsers(int size, String cursor, String role) {
@@ -123,100 +91,6 @@ public class AdminManagementService {
     public void archiveCombination(String id) {
         if (repository.archiveCombination(id) != 1)
             throw new IllegalArgumentException("Không tìm thấy tổ hợp đang hoạt động");
-    }
-
-    public List<Map<String, Object>> listLlmConfigurations() {
-        List<Map<String, Object>> databaseRows = repository.listLlmConfigurations();
-        Map<String, Map<String, Object>> databaseByPurpose = new HashMap<>();
-        for (Map<String, Object> row : databaseRows) {
-            String purpose = (String) row.get("purpose");
-            if ("EXTRACTION".equals(purpose) || "CHAT".equals(purpose))
-                databaseByPurpose.put(purpose, row);
-        }
-        List<Map<String, Object>> environmentRows = ragClient.get()
-                .uri(ragInternalUrl + "/api/internal/llm-configurations")
-                .header("X-Internal-Service-Token", internalServiceToken)
-                .retrieve().body(new ParameterizedTypeReference<List<Map<String, Object>>>() {});
-        if (environmentRows == null)
-            environmentRows = List.of();
-
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (String purpose : List.of("EXTRACTION", "CHAT")) {
-            Map<String, Object> environment = environmentRows.stream()
-                    .filter(row -> purpose.equals(row.get("purpose"))).findFirst().orElse(Map.of());
-            Map<String, Object> database = databaseByPurpose.getOrDefault(purpose, Map.of());
-            boolean activeDatabaseConfiguration = Boolean.TRUE.equals(database.get("active"));
-            boolean adminKeyConfigured = activeDatabaseConfiguration && Boolean.TRUE.equals(database.get("keyConfigured"));
-            boolean environmentKeyConfigured = Boolean.TRUE.equals(environment.get("keyConfigured"));
-            Map<String, Object> item = new HashMap<>();
-            item.put("purpose", purpose);
-            item.put("endpoint", activeDatabaseConfiguration ? database.get("endpoint") : environment.getOrDefault("endpoint", ""));
-            item.put("model", activeDatabaseConfiguration ? database.get("model") : environment.getOrDefault("model", ""));
-            item.put("active", database.isEmpty() || activeDatabaseConfiguration);
-            item.put("keyConfigured", adminKeyConfigured || environmentKeyConfigured);
-            item.put("keySource", adminKeyConfigured ? "ADMIN" : "ENVIRONMENT");
-            item.put("environmentKeyConfigured", environmentKeyConfigured);
-            result.add(item);
-        }
-        return result;
-    }
-
-    public Map<String, Object> activeLlmConfiguration(String purpose) {
-        if ("INTENT".equals(purpose))
-            purpose = "CHAT";
-        Map<String, Object> row = repository.activeLlmConfiguration(purpose);
-        if (row.isEmpty())
-            return Map.of("endpoint", "", "model", "", "apiKey", "");
-        String encrypted = (String) row.get("encrypted_api_key");
-        String apiKey = encrypted == null || encrypted.isBlank() ? "" : decrypt(encrypted);
-        return Map.of("endpoint", row.get("endpoint"), "model", row.get("model"), "apiKey", apiKey);
-    }
-
-    public void saveLlmConfiguration(String actorId, String purpose, String endpoint, String model, String apiKey,
-            boolean active) {
-        if (!List.of("EXTRACTION", "CHAT").contains(purpose))
-            throw new IllegalArgumentException("Mục đích LLM không hợp lệ");
-        if (!endpoint.matches("https?://[^\\s]+") || endpoint.length() > 1000)
-            throw new IllegalArgumentException("Endpoint phải là URL HTTP(S) hợp lệ");
-        if (model.isBlank() || model.length() > 255)
-            throw new IllegalArgumentException("Tên model không hợp lệ");
-        String encrypted = apiKey == null || apiKey.isBlank() ? "" : encrypt(apiKey);
-        repository.saveLlmConfiguration(actorId, purpose, endpoint, model, encrypted, active);
-    }
-
-    private String encrypt(String value) {
-        if (encryptionKey.getBytes(StandardCharsets.UTF_8).length < 32)
-            throw new IllegalStateException("LLM_CONFIG_ENCRYPTION_KEY must contain at least 32 bytes");
-        try {
-            byte[] iv = new byte[12];
-            random.nextBytes(iv);
-            byte[] key = MessageDigest.getInstance("SHA-256").digest(encryptionKey.getBytes(StandardCharsets.UTF_8));
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, iv));
-            byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
-            byte[] combined = new byte[iv.length + encrypted.length];
-            System.arraycopy(iv, 0, combined, 0, iv.length);
-            System.arraycopy(encrypted, 0, combined, iv.length, encrypted.length);
-            return Base64.getEncoder().encodeToString(combined);
-        } catch (Exception exception) {
-            throw new IllegalStateException("Could not encrypt LLM API key", exception);
-        }
-    }
-
-    private String decrypt(String value) {
-        if (encryptionKey.getBytes(StandardCharsets.UTF_8).length < 32)
-            throw new IllegalStateException("LLM_CONFIG_ENCRYPTION_KEY must contain at least 32 bytes");
-        try {
-            byte[] combined = Base64.getDecoder().decode(value);
-            byte[] iv = java.util.Arrays.copyOfRange(combined, 0, 12);
-            byte[] ciphertext = java.util.Arrays.copyOfRange(combined, 12, combined.length);
-            byte[] key = MessageDigest.getInstance("SHA-256").digest(encryptionKey.getBytes(StandardCharsets.UTF_8));
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, iv));
-            return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
-        } catch (Exception exception) {
-            throw new IllegalStateException("Could not decrypt configured LLM API key", exception);
-        }
     }
 
     private record Cursor(String createdAt, String id) {

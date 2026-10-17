@@ -29,8 +29,13 @@ public interface SubjectGroupRepository extends JpaRepository<Subject, String> {
                    s.name        AS subjectName
             FROM subject_groups sg
             JOIN subjects s ON sg.subject_code = s.code
+            LEFT JOIN admin.subject_group_publication_state state
+              ON state.school_code = sg.school_code AND state.academic_year = sg.academic_year
+             AND state.group_code = upper(sg.group_code)
             WHERE sg.school_code = :schoolCode
               AND sg.academic_year = :academicYear
+              AND sg.deleted_at IS NULL
+              AND coalesce(state.is_published, true) = true
             ORDER BY sg.group_code, s.code
             """, nativeQuery = true)
     List<SubjectGroupFlatProjection> findSubjectGroupsBySchool(
@@ -46,16 +51,24 @@ public interface SubjectGroupRepository extends JpaRepository<Subject, String> {
                    s.name AS subjectName
             FROM subject_groups sg
             JOIN subjects s ON sg.subject_code = s.code
-            WHERE sg.school_code = :schoolCode
+            LEFT JOIN admin.subject_group_publication_state state
+              ON state.school_code = sg.school_code AND state.academic_year = sg.academic_year
+             AND state.group_code = upper(sg.group_code)
+            WHERE sg.school_code = :schoolCode AND sg.deleted_at IS NULL
+              AND coalesce(state.is_published, true) = true
             ORDER BY sg.academic_year DESC, sg.group_code, s.code
             """, nativeQuery = true)
     List<SubjectGroupFlatProjection> findSubjectGroupsBySchool(@Param("schoolCode") String schoolCode);
 
     @Query(value = """
-            SELECT DISTINCT academic_year
-            FROM subject_groups
-            WHERE school_code = :schoolCode
-            ORDER BY academic_year DESC
+            SELECT DISTINCT sg.academic_year
+            FROM subject_groups sg
+            LEFT JOIN admin.subject_group_publication_state state
+              ON state.school_code = sg.school_code AND state.academic_year = sg.academic_year
+             AND state.group_code = upper(sg.group_code)
+            WHERE sg.school_code = :schoolCode AND sg.deleted_at IS NULL
+              AND coalesce(state.is_published, true) = true
+            ORDER BY sg.academic_year DESC
             """, nativeQuery = true)
     List<String> findAcademicYearsBySchool(@Param("schoolCode") String schoolCode);
 }

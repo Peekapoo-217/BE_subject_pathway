@@ -1,5 +1,13 @@
 # REPORT - BE_subject_pathway
 
+## Sửa lỗi năm học và xác thực ngữ cảnh tra cứu — 2026-10-16
+
+- [x] Sửa SQLSTATE `42702` tại API academic-years: định danh `sg.academic_year` trong SELECT và ORDER BY để tránh trùng cột với bảng trạng thái công bố.
+- [x] Request tra cứu nhận bộ `schoolCode`, `academicYear`, `groupCode`; kiểm tra trường hoạt động, nhóm đang công bố và tập môn khớp năm đã chọn. Giữ tương thích request chỉ có môn; không dùng năm THPT làm năm tuyển sinh đại học.
+- [x] Chạy Java 17 với `RUN_POSTGRES_TESTS=true`: `mvn.cmd -o -Dtest=SubjectGroupRepositoryPostgresTest,AdmissionSearchServiceImplTest,AdmissionSearchControllerTest,HighSchoolServiceImplTest test`; 25/25 đạt, không bỏ qua, gồm 2 kiểm thử PostgreSQL chỉ đọc. Dùng Maven cài sẵn vì wrapper gặp lỗi PowerShell khi đọc Target của thư mục cache.
+- [x] `docker compose up -d --build --no-deps backend` thành công. API TCV trả năm `["2026"]`, 4 nhóm; request TCV/2026/G01 trả 36 tổ hợp, 1 đại học; thêm DQN trả 45 ngành. Năm không tồn tại trả 404, tập môn không khớp trả 400.
+- [x] Cập nhật hợp đồng API tại `docs/openapi.md`. Không thay đổi schema hay dữ liệu nguồn.
+
 ## Sửa lỗi 500 khi tải nhóm bản nháp — 2026-10-14
 
 - [x] Tái hiện bằng `AdminPaginationPostgresTest` trên PostgreSQL ở chế độ chỉ đọc: `listDraftGroups` lỗi SQLSTATE `42703` vì CTE `grouped` không xuất cột `school_code`.
@@ -178,3 +186,54 @@ Migration V8 được tạo trong source nhưng chưa áp dụng lên database n
 - [x] B6. Cập nhật OpenAPI, hướng dẫn vận hành và report. Không sửa `data-scrawler` vì projection worker hiện tại đã đồng bộ trường/nhóm/năm qua outbox.
 - [x] Kiểm tra focused: `SchoolCodeGeneratorTest`, `ProvinceCatalogServiceTest`, `SchoolDocumentServiceTest`, `AdminDocumentControllerTest`; full `mvnw.cmd -q test`: 105 test, 0 lỗi/thất bại, 10 test tích hợp bị skip theo cấu hình hiện tại.
 - [ ] Triển khai migration V9 vào database mục tiêu: chưa thực hiện trong phiên này. Chưa có thay đổi dữ liệu PostgreSQL/Neo4j; bản ghi Tôn Đức Thắng được để nguyên theo yêu cầu.
+
+## Quản trị trường THPT và bỏ cấu hình AI trên giao diện — 2026-10-16
+
+- [x] Gỡ API cấu hình AI và truy vấn cấu hình runtime khỏi backend. Model chỉ nhận thiết lập từ `LLM_API_KEY`, `LLM_API_BASE`, `LLM_MODEL` trong `.env` của `data-scrawler`; bảng `admin.llm_configurations` được giữ lại nhưng không còn được đọc/ghi.
+- [x] Thêm migration V10 cho xóa mềm trường/nhóm môn/bản nháp, lịch sử mã trường, outbox đồng bộ graph và index lọc dữ liệu đang hoạt động.
+- [x] Thêm API CRUD `/api/v1/admin/high-schools`, cho ADMIN/SUPER_ADMIN; danh sách dùng keyset cursor, mã mới lấy chữ cái đầu sau `THPT`, mã nhập tay được phép, mã hiện tại/lịch sử/mã đề xuất không được tái sử dụng.
+- [x] Xóa mềm trường đánh dấu nhóm môn, tài liệu và nháp liên quan, hủy job trích xuất còn hoạt động, ghi audit và xếp hàng dọn graph; object R2 và versions vẫn được giữ.
+- [x] Ẩn trường/nhóm/bản nháp đã xóa khỏi các API và luồng công bố; cập nhật OpenAPI và hướng dẫn vận hành.
+- [x] Unit tests: `AdminHighSchoolServiceTest`, regression public listing/recommendation, `OpenApiDocumentationTest`. `mvnw.cmd -q test`: 111 test, 0 lỗi/thất bại, 10 integration tests bị bỏ qua do cần dịch vụ ngoài.
+- [ ] Chưa áp dụng migration V10 lên PostgreSQL; chưa ghi/xóa dữ liệu PostgreSQL, R2 hoặc Neo4j trong phiên này.
+
+## S3-compatible document storage with Docker MinIO - 2026-10-16
+
+- [x] Replace R2-specific storage wiring with one S3-compatible backend service selected through `OBJECT_STORAGE_PROVIDER`; keep upload, metadata, extraction-job, review and publication workflows unchanged. No database migration was added.
+- [x] Separate the internal S3 endpoint from the browser-facing presigned URL endpoint; verify object presence before issuing a download URL and return HTTP 404 when absent from the active store.
+- [x] Add a Compose overlay that builds a pinned MinIO OSS source tag, persists data in a named volume, and creates the private bucket idempotently. Local ignored `.env` files select MinIO; existing R2 variables were preserved but are no longer used by the active flow.
+- [x] Verification: focused backend tests 34/34; full `.\mvnw.cmd -q test` reported 116 tests, 0 failures/errors, 10 skipped; Compose config valid with MinIO enabled and disabled; MinIO image source build succeeded.
+- [ ] Containers were not started in this change. Upload/download and OCR against a running MinIO instance still need a local smoke test. Existing R2-only objects remain unavailable while MinIO is selected; no object copy was performed.
+# Khôi phục tài liệu và trường đã xóa mềm — 2026-10-16
+
+- [x] Restore document kiểm tra mọi object version trong bucket đang cấu hình, phục hồi PostgreSQL trong một transaction, ghi outbox graph và audit; request lặp lại phát lại job restore hiện có.
+- [x] Kiểm tra provenance nhóm đã công bố trước unpublish/restore; thiếu, lệch hoặc không hoạt động trả HTTP 409 trước thay đổi PostgreSQL. Khôi phục draft chỉ theo cùng `deleted_at`/`deleted_by`, và chỉ requeue extraction bị hủy bởi lần xóa đó.
+- [x] Thêm API SUPER_ADMIN để liệt kê và khôi phục trường đã xóa; trường và nhóm môn được khôi phục trước, tài liệu vẫn soft-deleted để khôi phục riêng.
+- [x] Thêm migration V12 dạng data-only để sửa các source rows có ánh xạ school code lịch sử không xung đột; không thay đổi schema.
+- [x] Kiểm thử: `mvn.cmd clean test` — 144 test, 0 lỗi/thất bại, 12 test integration bị skip do không có dịch vụ test tương ứng.
+- [ ] Chưa áp dụng V12 hoặc chạy restore/đồng bộ với PostgreSQL, MinIO và Neo4j thật trong phiên này.
+
+## Phân quyền xóa mềm và ngừng công bố tài liệu — 2026-10-17
+
+> Mục này ghi trạng thái ban đầu. Cập nhật mới nhất trong phần “Hợp đồng API cho xóa node graph và khôi phục” và report data-scrawler đã thay đổi unpublish thành xóa node nhóm cùng cạnh trong Neo4j.
+
+- [x] ADMIN gửi yêu cầu xóa và chờ SUPER_ADMIN duyệt; SUPER_ADMIN có thể xóa mềm trực tiếp. Cả hai đường xóa hủy job trích xuất còn hoạt động, soft delete draft liên quan và ghi audit.
+- [x] Xóa mềm chỉ đổi trạng thái trong PostgreSQL, giữ nguyên quan hệ đã công bố trên Neo4j và giữ object nguồn để có thể khôi phục.
+- [x] Chỉ SUPER_ADMIN được xem/khôi phục tài liệu đã xóa hoặc ngừng công bố. Ngừng công bố chỉ áp dụng cho tài liệu đã xóa; worker bỏ cạnh `OFFERS_GROUP` khi không còn nguồn tài liệu đã công bố, giữ node và cạnh `INCLUDES_SUBJECT` để khôi phục.
+- [x] Worker áp dụng trạng thái cạnh theo revision đơn điệu để job cũ không ghi đè trạng thái mới; xác minh orphan không coi nhóm đã ngừng công bố là lỗi.
+- [x] Kiểm thử: `mvn.cmd -o test` (145 test, 0 lỗi/thất bại, 12 integration test bị skip); `python -m unittest discover -s tests` (80 test đạt); test Angular (22/22 đạt); `npm.cmd run build` thành công.
+- [ ] Chưa chạy end-to-end với PostgreSQL/Neo4j đang hoạt động; không có migration mới trong thay đổi này.
+
+## Sửa lỗi JDBC khi khôi phục tài liệu — 2026-10-17
+
+- [x] Escape ba toán tử JSONB `?` thành `??` trong truy vấn phục hồi draft để pgjdbc không coi chúng là bind parameter.
+- [x] Thêm unit test kiểm tra SQL snapshot và số bind parameter; thêm kiểm thử PostgreSQL read-only cho toán tử JSONB qua JDBC.
+- [x] Kiểm tra: repository unit test 3/3; PostgreSQL read-only test 3/3; `mvnw.cmd -o test` (147 test, 0 lỗi/thất bại, 13 integration test bị skip); `mvnw.cmd -o -DskipTests package` thành công; `git diff --check` không có lỗi whitespace.
+- [ ] Chưa gọi API khôi phục tài liệu TĐT thật. Bản ghi vẫn giữ trạng thái trước request; cần smoke test có kiểm soát sau khi backend được build lại.
+
+## Hợp đồng API cho xóa node graph và khôi phục — 2026-10-17
+
+- [x] Cập nhật Swagger cho biết unpublish xóa node `SubjectGroup` cùng các quan hệ kèm theo khi không còn nguồn công bố; restore xếp hàng đồng bộ để dựng lại projection từ PostgreSQL.
+- [x] Thêm unit test cho mô tả endpoint và thứ tự khôi phục PostgreSQL trước khi tạo graph-sync job.
+- [x] Kiểm tra: focused backend tests 50/50; `mvnw.cmd -o -q test` — 148 test, 0 lỗi/thất bại, 13 integration test bị skip.
+- [ ] Chưa chạy request thật với PostgreSQL, MinIO và Neo4j; chưa có migration schema mới.

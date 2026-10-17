@@ -80,7 +80,7 @@ class HighSchoolServiceImplTest {
     @Test
     @DisplayName("getAllHighSchools map entity sang DTO dung truong code va name")
     void getAllHighSchools_mapsToDto() {
-        when(highSchoolRepository.findAllByOrderByCodeAsc()).thenReturn(List.of(
+        when(highSchoolRepository.findAllByDeletedAtIsNullOrderByCodeAsc()).thenReturn(List.of(
                 HighSchool.builder()
                         .code("THPT01")
                         .name("Truong THPT Chuyen")
@@ -104,7 +104,7 @@ class HighSchoolServiceImplTest {
     @Test
     @DisplayName("getSubjectGroupsBySchool gom flat rows thanh nhom mon dung thu tu")
     void getSubjectGroupsBySchool_groupsFlatRows() {
-        when(highSchoolRepository.existsById("THPT01")).thenReturn(true);
+        when(highSchoolRepository.existsByCodeAndDeletedAtIsNull("THPT01")).thenReturn(true);
         when(subjectGroupRepository.findSubjectGroupsBySchool("THPT01"))
                 .thenReturn(List.of(
                         row("KHTN", "Khoi Khoa hoc Tu nhien", "TOAN", "Toan"),
@@ -127,7 +127,7 @@ class HighSchoolServiceImplTest {
     @Test
     @DisplayName("getSubjectGroupsBySchool nem ResourceNotFound khi ma truong khong ton tai")
     void getSubjectGroupsBySchool_throws_whenSchoolNotFound() {
-        when(highSchoolRepository.existsById("KHONGCO")).thenReturn(false);
+        when(highSchoolRepository.existsByCodeAndDeletedAtIsNull("KHONGCO")).thenReturn(false);
 
         assertThrows(ResourceNotFoundException.class,
                 () -> service.getSubjectGroupsBySchool("KHONGCO"));
@@ -137,7 +137,7 @@ class HighSchoolServiceImplTest {
     @Test
     @DisplayName("getSubjectGroupsBySchool tra ve danh sach rong khi truong chua co nhom mon")
     void getSubjectGroupsBySchool_returnsEmpty_whenSchoolHasNoGroups() {
-        when(highSchoolRepository.existsById("THPT02")).thenReturn(true);
+        when(highSchoolRepository.existsByCodeAndDeletedAtIsNull("THPT02")).thenReturn(true);
         when(subjectGroupRepository.findSubjectGroupsBySchool("THPT02"))
                 .thenReturn(List.of());
 

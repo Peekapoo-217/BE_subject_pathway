@@ -35,13 +35,13 @@ public class SchoolDocumentService {
     private record UploadType(String contentType, String extension) {}
     private record ProposedSchool(String schoolCode, String name, String location, String code) {}
     private final SchoolDocumentRepository repository;
-    private final R2StorageService storage;
+    private final ObjectStorageService storage;
     private final ObjectMapper mapper = new ObjectMapper();
     private final CursorCodec cursors;
     private final ProvinceCatalogService provinces;
     private final long maxBytes;
 
-    public SchoolDocumentService(SchoolDocumentRepository repository, R2StorageService storage, CursorCodec cursors,
+    public SchoolDocumentService(SchoolDocumentRepository repository, ObjectStorageService storage, CursorCodec cursors,
             ProvinceCatalogService provinces,
             @Value("${app.storage.max-upload-bytes:52428800}") long maxBytes) {
         this.repository = repository;
@@ -127,11 +127,29 @@ public class SchoolDocumentService {
     }
 
     public Map<String, Object> list(String status, int size, String cursor) {
+        return list(status, false, size, cursor);
+    }
+
+    public Map<String, Object> listDeleted(int size, String cursor) {
+        return list("DELETED", true, size, cursor);
+    }
+
+    private Map<String, Object> list(String status, boolean deleted, int size, String cursor) {
         int limit = Math.max(1, Math.min(size, 100));
-        Cursor decoded = decodeCursor(cursor, status == null ? "" : status);
-        List<Map<String, Object>> rows = repository.list(status, decoded == null ? null : decoded.createdAt,
+        String filter = (deleted ? "deleted:" : "active:") + (status == null ? "" : status);
+        Cursor decoded = decodeCursor(cursor, filter);
+        List<Map<String, Object>> rows = repository.list(status, deleted, decoded == null ? null : decoded.createdAt,
                 decoded == null ? null : decoded.id, limit + 1);
-        return page(rows, limit, status == null ? "" : status);
+        return page(rows, limit, filter);
+    }
+
+    public Map<String, Object> document(String id, boolean allowDeleted) {
+        Map<String, Object> document = repository.findDocument(id);
+        if (document == null || (document.get("deletedAt") != null && !allowDeleted)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "KhÃ´ng tÃ¬m tháº¥y tÃ i liá»‡u");
+        }
+        document.remove("objectKey");
+        return document;
     }
 
     public Map<String, Object> listDrafts(int size, String cursor, String status) {
@@ -218,8 +236,13 @@ public class SchoolDocumentService {
         repository.auditSubmitted(draftId, actorId);
     }
 
-    public String downloadUrl(String documentId) {
-        String key = repository.latestObjectKey(documentId);
+    public String downloadUrl(String documentId, boolean allowDeleted) {
+        document(documentId, allowDeleted);
+        String key = repository.latestObjectKey(documentId, allowDeleted);
+        if (!storage.exists(key)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Tệp không tồn tại trong kho lưu trữ đang được cấu hình");
+        }
         return storage.presignedGet(key);
     }
 
@@ -229,10 +252,12 @@ public class SchoolDocumentService {
             throw new IllegalArgumentException("Chỉ có thể thử lại tài liệu có lần trích xuất mới nhất thất bại");
     }
 
+    @Transactional
     public void requestDelete(String id, String actorId) {
         int changed = repository.requestDelete(id, actorId);
         if (changed != 1)
             throw new IllegalArgumentException("Tài liệu không tồn tại hoặc đã có yêu cầu xóa");
+        repository.auditDocumentSoftDeleted(id, actorId, "DOCUMENT_DELETE_REQUESTED");
     }
 
     @Transactional
@@ -241,7 +266,7 @@ public class SchoolDocumentService {
         if (count != 1)
             throw new IllegalArgumentException("Không tìm thấy yêu cầu xóa đang chờ duyệt");
         repository.cancelActiveJobs(id);
-        repository.deleteUnpublishedDraftsForDocument(id, actorId);
+        repository.softDeleteDraftsForDocument(id, actorId);
         repository.auditDeleteApproved(id, actorId);
     }
 
@@ -250,8 +275,108 @@ public class SchoolDocumentService {
         if (repository.softDeleteDocument(id, actorId) != 1)
             throw new IllegalArgumentException("Tài liệu không tồn tại hoặc đã được xóa");
         repository.cancelActiveJobs(id);
-        repository.deleteUnpublishedDraftsForDocument(id, actorId);
+        repository.softDeleteDraftsForDocument(id, actorId);
         repository.auditDocumentSoftDeleted(id, actorId, "DOCUMENT_SOFT_DELETED");
+    }
+
+    @Transactional
+    public Map<String, Object> unpublishDocument(String id, String actorId) {
+        Map<String, Object> document = repository.lockLifecycleDocument(id);
+        if (document == null || document.get("deletedAt") == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Chá»‰ cÃ³ thá»ƒ ngá»«ng cÃ´ng bá»‘ tÃ i liá»‡u Ä‘Ã£ xÃ³a má»m");
+        }
+        if ("UNPUBLISHED".equals(document.get("graphPublicationStatus"))) {
+            return graphOperationResult(id, "UNPUBLISHED", repository.latestDocumentGraphSyncJob(id));
+        }
+        if (!repository.isSchoolActiveForDocument(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cáº§n khÃ´i phá»¥c trÆ°á»ng THPT trÆ°á»›c khi thao tÃ¡c tÃ i liá»‡u");
+        }
+        if (repository.hasUnattributedGroupSource(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "KhÃ´ng thá»ƒ xÃ¡c minh nhÃ³m mÃ´n chá»‰ thuá»™c tÃ i liá»‡u nÃ y; graph chÆ°a bá»‹ thay Ä‘á»•i");
+        }
+        List<String> groups = verifiedDocumentGroups(id, true);
+        if (repository.setDocumentGraphPublication(id, false) != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "TÃ i liá»‡u Ä‘Ã£ thay Ä‘á»•i; hÃ£y táº£i láº¡i");
+        }
+        String jobId = enqueueDocumentGraphSync(id, document, groups);
+        repository.auditDocumentSoftDeleted(id, actorId, "DOCUMENT_UNPUBLISHED");
+        return graphOperationResult(id, "UNPUBLISHED", jobId == null ? null : Map.of(
+                "graphSyncJobId", jobId, "graphSyncStatus", "PENDING"));
+    }
+
+    @Transactional
+    public Map<String, Object> restoreDocument(String id, String actorId) {
+        Map<String, Object> document = repository.lockLifecycleDocument(id);
+        if (document == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+        if (document.get("deletedAt") == null) {
+            Map<String, Object> replay = repository.restoreReplay(id);
+            if (replay == null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Document is not soft-deleted");
+            }
+            return graphOperationResult(id, "PUBLISHED", replay);
+        }
+        if (!repository.isSchoolActiveForDocument(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cáº§n khÃ´i phá»¥c trÆ°á»ng THPT trÆ°á»›c khi khÃ´i phá»¥c tÃ i liá»‡u");
+        }
+        List<String> groups = verifiedDocumentGroups(id,
+                "PUBLISHED".equals(document.get("statusBeforeDelete"))
+                        || "UNPUBLISHED".equals(document.get("graphPublicationStatus")));
+        List<String> objectKeys = repository.objectKeys(id);
+        if (objectKeys.isEmpty() || objectKeys.stream().anyMatch(key -> !storage.exists(key))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Thiáº¿u tá»‡p trong kho lÆ°u trá»¯ Ä‘ang cáº¥u hÃ¬nh; bá»• sung tá»‡p Ä‘Ãºng bucket rá»“i thá»­ láº¡i");
+        }
+        if (repository.restoreDocument(id) != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "TÃ i liá»‡u Ä‘Ã£ thay Ä‘á»•i; hÃ£y táº£i láº¡i");
+        }
+        String jobId = enqueueDocumentGraphSync(id, document, groups);
+        repository.auditDocumentRestored(id, actorId, jobId);
+        return graphOperationResult(id, "PUBLISHED", jobId == null ? null : Map.of(
+                "graphSyncJobId", jobId, "graphSyncStatus", "PENDING"));
+    }
+
+    private List<String> verifiedDocumentGroups(String documentId, boolean requireGroups) {
+        List<String> sourceGroups = repository.documentGroupCodes(documentId);
+        List<String> publishedGroups = repository.publishedDocumentGroupCodes(documentId);
+        if (!sourceGroups.containsAll(publishedGroups)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot verify all published graph groups for this document; review its source mapping first");
+        }
+        if (!sourceGroups.isEmpty() && !repository.documentSourceGroupsAreActive(documentId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "One or more document-owned subject groups are not active in PostgreSQL");
+        }
+        if (requireGroups && sourceGroups.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This document has no verified published group source for a graph lifecycle operation");
+        }
+        return sourceGroups;
+    }
+
+    public Map<String, Object> documentGraphSyncJob(String documentId, String jobId) {
+        Map<String, Object> result = repository.findDocumentGraphSyncJob(documentId, jobId);
+        if (result == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Graph sync job not found");
+        }
+        return result;
+    }
+
+    private String enqueueDocumentGraphSync(String id, Map<String, Object> document, List<String> groups) {
+        if (groups.isEmpty() || document.get("schoolCode") == null) return null;
+        return repository.createDocumentGraphSyncJob(id, (String) document.get("schoolCode"),
+                (String) document.get("academicYear"), groups);
+    }
+
+    private Map<String, Object> graphOperationResult(String id, String publicationStatus, Map<String, Object> job) {
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("documentId", id);
+        result.put("graphPublicationStatus", publicationStatus);
+        result.put("graphSyncStatus", job == null ? "SYNCED" : job.getOrDefault("graphSyncStatus", "PENDING"));
+        result.put("graphSyncJobId", job == null ? null : job.get("graphSyncJobId"));
+        return result;
     }
 
     @Transactional

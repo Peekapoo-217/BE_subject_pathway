@@ -32,7 +32,7 @@ public class HighSchoolServiceImpl implements HighSchoolService {
 
     @Override
     public List<HighSchoolDto> getAllHighSchools() {
-        return highSchoolRepository.findAllByOrderByCodeAsc().stream()
+        return highSchoolRepository.findAllByDeletedAtIsNullOrderByCodeAsc().stream()
                 .map(school -> new HighSchoolDto(school.getCode(), school.getName()))
                 .toList();
     }
@@ -50,7 +50,8 @@ public class HighSchoolServiceImpl implements HighSchoolService {
         ensureSchoolExists(normalizedCode);
         List<String> years = subjectGroupRepository.findAcademicYearsBySchool(normalizedCode);
         if (years.isEmpty()) {
-            // Compatibility fallback for legacy repository implementations; real catalog rows
+            // Compatibility fallback for legacy repository implementations; real catalog
+            // rows
             // always yield at least one year from the same PostgreSQL table.
             return toSubjectGroups(subjectGroupRepository.findSubjectGroupsBySchool(normalizedCode));
         }
@@ -94,7 +95,7 @@ public class HighSchoolServiceImpl implements HighSchoolService {
     }
 
     private void ensureSchoolExists(String schoolCode) {
-        if (!highSchoolRepository.existsById(schoolCode)) {
+        if (!highSchoolRepository.existsByCodeAndDeletedAtIsNull(schoolCode)) {
             throw new ResourceNotFoundException(
                     "Truong THPT khong ton tai voi ma: " + schoolCode);
         }

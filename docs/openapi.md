@@ -8,6 +8,34 @@ When the backend is running locally on port `8080`:
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
 - OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
 
+The school-group search flow loads `/api/v1/high-schools/{schoolCode}/academic-years`,
+then `/api/v1/high-schools/{schoolCode}/subject-groups?academicYear=...` for the selected year.
+Years are distinct and sorted newest first; unpublished or soft-deleted groups are excluded.
+The UI keeps the year control visible after a school is selected, supports retry after load errors,
+and clears previous groups/results when the user changes year. Late responses from older selections
+are ignored.
+
+The school-based `POST /api/v1/admissions/search-by-subjects` request includes the selected context:
+
+```json
+{
+  "subjectCodes": ["PHYSICS", "CHEMISTRY"],
+  "schoolCode": "TCV",
+  "academicYear": "2026",
+  "groupCode": "G01"
+}
+```
+
+Subject codes must match the published group for that school/year. Missing or deleted schools and
+unavailable/unpublished groups return 404; partial context, malformed years, or mismatched subjects
+return 400. The context fields are supplied together. Existing subject-only callers may omit all
+three fields. Requests to load majors add `universityCode` and retain the same school/year/group.
+`academicYear` selects the THPT group; university admission-year filtering is not part of this field.
+
+Read-only SQL regression (database migrated through V11): set `RUN_POSTGRES_TESTS=true` and run
+`./mvnw -Dtest=SubjectGroupRepositoryPostgresTest test` (Windows: `.\mvnw.cmd`).
+The test uses the configured datasource without running migrations or creating fixtures.
+
 The documented application endpoints are:
 
 | Method | Path | Purpose |
@@ -26,11 +54,19 @@ The documented application endpoints are:
 | `GET` | `/api/v1/auth/me` | Read the authenticated user's profile and role. |
 | `GET/POST/PUT/PATCH/DELETE` | `/api/v1/admin/users` | SUPER_ADMIN user listing (cursor), creation, role/active update, password reset, and deactivation. |
 | `GET/POST/PUT/DELETE` | `/api/v1/admin/combinations` | SUPER_ADMIN combination listing (cursor), creation, display update, and archive. |
-| `GET/POST` | `/api/v1/admin/llm-configurations` | SUPER_ADMIN reads safe status for document extraction and chat configuration, then saves endpoint/model and an optional API key. A blank key selects the `data-scrawler` environment key. |
-| `GET/POST/PUT/DELETE` | `/api/v1/admin/documents` | ADMIN/SUPER_ADMIN document listing (cursor), private PDF or image upload, metadata update, ADMIN delete request, or SUPER_ADMIN direct soft-delete. |
+| `GET/POST/PUT/DELETE` | `/api/v1/admin/high-schools` | ADMIN/SUPER_ADMIN keyset-paginated high-school CRUD. School codes can be generated from the name or entered/edited manually; deletes are soft deletes. |
+| `GET` | `/api/v1/admin/high-schools/deleted` | SUPER_ADMIN only; cursor-paginated deleted schools. |
+| `POST` | `/api/v1/admin/high-schools/{code}/restore` | SUPER_ADMIN only; restores the school and groups soft-deleted by the same operation, then queues graph reconciliation. Related documents remain deleted. |
+| `GET` | `/api/v1/admin/high-schools/{code}/graph-sync/{jobId}` | SUPER_ADMIN only; polls school graph reconciliation status. |
+| `GET/POST/PUT/DELETE` | `/api/v1/admin/documents` | ADMIN/SUPER_ADMIN active document list (cursor), private PDF/image upload, metadata update, and delete action. ADMIN creates a delete request; SUPER_ADMIN soft-deletes immediately. |
+| `GET` | `/api/v1/admin/documents/deleted` | SUPER_ADMIN only; cursor-paginated soft-deleted documents. |
+| `GET` | `/api/v1/admin/documents/{id}` | ADMIN/SUPER_ADMIN document detail; a soft-deleted document is visible only to SUPER_ADMIN, while ADMIN receives 404. |
 | `GET` | `/api/v1/admin/documents/provinces` | Return the cached province catalog for proposed THPT schools. |
 | `GET` | `/api/v1/admin/documents/school-code-suggestion` | Suggest/check a school code; query parameters: `schoolName`, `provinceCode`, optional custom `code`. |
-| `GET` | `/api/v1/admin/documents/{id}/download-url` | Get a short-lived URL for the latest authorized document version. |
+| `GET` | `/api/v1/admin/documents/{id}/download-url` | Get a short-lived URL for the latest authorized document version; returns `404` when its object is absent from the active store. |
+| `POST` | `/api/v1/admin/documents/{id}/unpublish` | SUPER_ADMIN only; requires a soft-deleted document with verified published group provenance. When no other published source remains, the Neo4j worker deletes the group node and its attached relationships. Returns 202 while syncing; returns 409 if attribution is missing or ambiguous. |
+| `POST` | `/api/v1/admin/documents/{id}/restore` | SUPER_ADMIN only; validates every retained version object, restores PostgreSQL and drafts, then recreates the graph groups and relationships from PostgreSQL. Returns 202 while the graph worker runs; replaying restore returns the existing job. |
+| `GET` | `/api/v1/admin/documents/{id}/graph-sync/{jobId}` | SUPER_ADMIN only; polls the lifecycle outbox job. `SYNCED` confirms Neo4j projection completion. |
 | `POST` | `/api/v1/admin/documents/{id}/retry-extraction` | Requeue a failed extraction job for the latest version without a new upload. |
 | `GET` | `/api/v1/admin/documents/draft-groups` | Cursor-paginated draft groups by school and academic year. SUPER_ADMIN sees DRAFT and SUBMITTED; ADMIN sees DRAFT. |
 | `GET` | `/api/v1/admin/documents/draft-groups/drafts` | Cursor-paginated drafts in one group; accepts `groupKey` and `academicYear` from the group summary. |
@@ -38,7 +74,6 @@ The documented application endpoints are:
 | `POST` | `/api/v1/admin/documents/draft-groups/publish` | SUPER_ADMIN publishes every reviewed DRAFT/SUBMITTED draft for one school and academic year as one transaction. |
 | `DELETE` | `/api/v1/admin/documents/drafts/{draftId}` | SUPER_ADMIN hard-deletes one unpublished draft with an audit snapshot. |
 | `POST` | `/api/v1/admin/documents/{id}/approve-delete` | SUPER_ADMIN approval of a document soft-delete request. |
-| `GET` | `/api/v1/internal/llm/{purpose}` | Internal worker profile retrieval guarded by `X-Internal-Service-Token`; `INTENT` resolves to `CHAT`, and blank saved keys are returned empty for worker-side environment fallback. |
 
 Each `possibleCombinations[]` item includes `labels: [{code, subjectDetails}]` from
 the newest imported combination catalogue snapshot. `labels` is empty if no
@@ -55,14 +90,20 @@ Flyway V9 stores proposed province and code in `admin.school_documents` and rebu
 
 Draft groups may contain one to four distinct subject codes. Extraction, draft editing, publication, and recommendation filtering accept this range; they do not require exactly four subjects. To publish, SUPER_ADMIN loads every page for one school/year, reviews the complete set, checks the confirmation that the set was reviewed, then calls `POST /draft-groups/publish` with `{groupKey, academicYear, reviewedDraftIds}`. DRAFT rows may be published directly; ADMIN uses the separate submit endpoint to request review. The backend locks the school/year documents and drafts, rejects stale IDs, unsupported states, active extraction, invalid subjects, or duplicate/already-published group codes, and publishes the complete set atomically. Each successful publication inserts a PostgreSQL outbox job; the graph projection worker retries Neo4j sync in the background. The response includes `batchId`, `publishedGroupCount`, and initial `graphSyncStatus: PENDING`; document listing exposes the latest graph sync status.
 
-ADMIN `DELETE /documents/{id}` changes the state to `DELETE_REQUESTED`; SUPER_ADMIN approval performs the soft delete. SUPER_ADMIN `DELETE /documents/{id}` soft-deletes immediately. Final soft-delete cancels pending, running, and retry extraction jobs; writes a full audit snapshot for each non-published draft; detaches prior audit rows; and deletes those drafts. Published drafts and published `subject_groups` remain, as do R2 objects and document-version records. A worker that was already processing cannot write draft results after the document is deleted.
+ADMIN `DELETE /documents/{id}` records `DELETE_REQUESTED`; SUPER_ADMIN must approve it before soft deletion. SUPER_ADMIN may soft-delete directly. A completed soft delete updates PostgreSQL and recoverable drafts, retains MinIO source keys, and leaves Neo4j unchanged, so published groups remain searchable. Deleted documents are excluded from normal lists; only SUPER_ADMIN can inspect, restore, or unpublish them.
+
+`DELETE /documents/{id}` by ADMIN changes the document to `DELETE_REQUESTED`; SUPER_ADMIN may approve it through `POST /documents/{id}/approve-delete`. Approval and direct SUPER_ADMIN deletion soft-delete the document and recoverable drafts in PostgreSQL while retaining MinIO objects and published graph relations. `POST /documents/{id}/unpublish` recomputes visibility for source-attributed groups. A group remains published when another document contributes a published source. Migration V11 marks groups without verified document provenance as `UNATTRIBUTED`; attempting to unpublish a document that owns such a group returns HTTP 409 without changing graph visibility. Successful unpublication sets `is_published=false` in PostgreSQL and queues an outbox job; when no published source remains, the worker deletes the scoped `SubjectGroup` node and its attached relationships from Neo4j. Shared school and subject nodes remain. `POST /documents/{id}/restore` validates that all retained MinIO objects exist, restores PostgreSQL document/draft state, and queues a retryable graph projection that recreates missing group nodes and relationships from PostgreSQL. Lifecycle actions are retryable; repeat unpublish returns the current lifecycle job rather than creating another one. The UI displays PENDING/RUNNING/RETRY and only reports graph completion after the status endpoint returns `SYNCED`.
 
 SUPER_ADMIN `DELETE /documents/drafts/{draftId}` hard-deletes one unpublished draft after storing its audit snapshot. It leaves the uploaded document, source object, published data, and document status unchanged. If that source version has an active extraction job, the endpoint returns HTTP `409`. The endpoint rejects PUBLISHED drafts. Edit, submit, and publish operations are blocked while a source document is `DELETE_REQUESTED` or `DELETED`. Oversized multipart requests return HTTP `413`.
 Validation failures return HTTP `400`; invalid login credentials and refresh tokens return `401`;
 duplicate usernames at registration return `409`; missing business data returns `404`; and
 unexpected errors return `500` with a generic customer-facing message.
 
-LLM configuration purposes exposed to SUPER_ADMIN are `EXTRACTION` and `CHAT`. `INTENT` remains a distinct processing step and uses the `CHAT` profile. The configuration list never returns an API key; it reports `keySource`, `keyConfigured`, and safe endpoint/model metadata. On save, a non-empty `apiKey` replaces and encrypts the stored key; an empty or omitted `apiKey` stores the environment-source marker and uses `LLM_API_KEY` (or `GEMINI_API_KEY`) from `data-scrawler`. The backend reads environment metadata from the protected RAG internal endpoint using the shared `INTERNAL_SERVICE_TOKEN` and `RAG_INTERNAL_API_URL`.
+AI provider settings are read only from `data-scrawler` environment variables (`LLM_API_KEY`, `LLM_API_BASE`, and `LLM_MODEL`). There is no admin API for reading or changing AI settings. Chat answer generation and intent classification remain separate processing steps while using that configured model.
+
+High-school administration uses `GET /api/v1/admin/high-schools?size=20&cursor=...`, `GET /{code}`, `POST /`, `PUT /{code}`, and `DELETE /{code}`. The list uses a signed keyset cursor ordered by school code and caps page size at 100. Create/update requests contain `{code?, name, provinceCode}`. An omitted code is generated from the first letters after `THPT`; code changes retain the previous code in history, and a historical/current/proposed document code cannot be reused. Delete marks the school, published subject groups, related documents, and drafts as deleted, queues Neo4j cleanup, and retains objects in the active store for audit.
+
+Document objects use one environment-selected S3-compatible provider: `MINIO` locally or `R2`. PostgreSQL stores object keys; it does not store the selected provider, and changing providers does not copy objects. Backend upload and the extraction worker use the same bucket and credentials. `download-url` returns HTTP `404` when the key is not present in the active provider.
 Login accepts any non-empty password and verifies it against the stored hash. Registration,
 SUPER_ADMIN user creation, and password reset require 6 to 200 characters. Usernames are limited
 to 80 characters.

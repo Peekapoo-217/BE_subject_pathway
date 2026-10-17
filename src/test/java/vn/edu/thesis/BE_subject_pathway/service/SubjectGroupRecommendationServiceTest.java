@@ -1,6 +1,7 @@
 package vn.edu.thesis.BE_subject_pathway.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -19,7 +20,7 @@ class SubjectGroupRecommendationServiceTest {
 
     @Test
     void includesAOneSubjectSchoolGroupInRecommendations() {
-        when(schools.existsById("SCHOOL")).thenReturn(true);
+        when(schools.existsByCodeAndDeletedAtIsNull("SCHOOL")).thenReturn(true);
         when(graph.findAcademicYears("SCHOOL")).thenReturn(List.of("2026-2027"));
         when(graph.findSubjectGroups("SCHOOL", "2026-2027")).thenReturn(List.of(
                 new SubjectGroupData("A01", "Nhóm A01", "2026-2027",
@@ -34,5 +35,16 @@ class SubjectGroupRecommendationServiceTest {
         assertEquals(1, result.getRecommendations().size());
         assertEquals(1, result.getRecommendations().get(0).getSubjects().size());
         assertEquals("A01", result.getRecommendations().get(0).getGroupCode());
+    }
+
+    @Test
+    void rejectsSoftDeletedSchoolBeforeQueryingTheGraph() {
+        when(schools.existsByCodeAndDeletedAtIsNull("SCHOOL")).thenReturn(false);
+        SubjectGroupRecommendationRequest request = new SubjectGroupRecommendationRequest();
+        request.setAcademicYear("2026-2027");
+        request.setPreferredSubjectCodes(List.of("MATH"));
+
+        assertThrows(vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException.class,
+                () -> service.recommend("SCHOOL", request));
     }
 }

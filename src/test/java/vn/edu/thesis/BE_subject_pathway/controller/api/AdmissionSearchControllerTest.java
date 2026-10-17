@@ -1,6 +1,9 @@
 package vn.edu.thesis.BE_subject_pathway.controller.api;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -36,6 +39,39 @@ class AdmissionSearchControllerTest {
 
     @MockitoBean
     private AdmissionSearchService admissionSearchService;
+
+    @Test
+    void acceptsAndPassesSelectedAcademicYearAndSchoolGroup() throws Exception {
+        when(admissionSearchService.searchBySubjects(any()))
+                .thenReturn(new SubjectSearchResponse(0, List.of(), 0L, 0L));
+
+        mockMvc.perform(post("/api/v1/admissions/search-by-subjects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"subjectCodes":["PHYSICS"],"schoolCode":"TCV",
+                         "academicYear":"2026-2027","groupCode":"G01","universityCode":"DQN"}
+                        """))
+                .andExpect(status().isOk());
+
+        verify(admissionSearchService).searchBySubjects(argThat(request ->
+                "2026-2027".equals(request.getAcademicYear())
+                        && "TCV".equals(request.getSchoolCode())
+                        && "G01".equals(request.getGroupCode())
+                        && "DQN".equals(request.getUniversityCode())));
+    }
+
+    @Test
+    void rejectsIncompleteOrInvalidAcademicYearContext() throws Exception {
+        for (String payload : List.of(
+                "{\"subjectCodes\":[\"PHYSICS\"],\"academicYear\":\"2026\"}",
+                "{\"subjectCodes\":[\"PHYSICS\"],\"schoolCode\":\"TCV\",\"groupCode\":\"G01\",\"academicYear\":\"invalid\"}",
+                "{\"subjectCodes\":[\"PHYSICS\"],\"schoolCode\":\"TCV\",\"groupCode\":\"G01\",\"academicYear\":\"\"}")) {
+            mockMvc.perform(post("/api/v1/admissions/search-by-subjects")
+                    .contentType(MediaType.APPLICATION_JSON).content(payload))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(admissionSearchService);
+    }
 
     @Test
     @DisplayName("POST search-by-subjects tra ve 200 va ApiResponse khi hop le")

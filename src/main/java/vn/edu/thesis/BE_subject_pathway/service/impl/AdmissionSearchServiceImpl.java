@@ -19,6 +19,8 @@ import vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionCombinationRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.AdmissionOfferRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.SubjectRepository;
+import vn.edu.thesis.BE_subject_pathway.repository.HighSchoolRepository;
+import vn.edu.thesis.BE_subject_pathway.repository.SubjectGroupRepository;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.SearchStatsProjection;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationProjection;
 import vn.edu.thesis.BE_subject_pathway.service.AdmissionSearchService;
@@ -39,12 +41,16 @@ public class AdmissionSearchServiceImpl implements AdmissionSearchService {
     private final AdmissionCombinationRepository combinationRepository;
     private final AdmissionOfferRepository offerRepository;
     private final SubjectRepository subjectRepository;
+    private final HighSchoolRepository highSchoolRepository;
+    private final SubjectGroupRepository subjectGroupRepository;
 
     @Override
     public SubjectSearchResponse searchBySubjects(SubjectSearchRequest request) {
         List<String> requestedCodes = request.getSubjectCodes().stream()
                 .map(String::trim)
                 .toList();
+
+        validateSchoolGroup(request, requestedCodes);
 
         List<String> mandatoryCodes = subjectRepository.findCodesByIsMandatoryTrue().stream()
                 .map(String::trim)
@@ -106,5 +112,26 @@ public class AdmissionSearchServiceImpl implements AdmissionSearchService {
                 stats.getTotalUniversities(),
                 universities,
                 majors);
+    }
+
+    private void validateSchoolGroup(SubjectSearchRequest request, List<String> requestedCodes) {
+        if (!request.isSchoolGroupContextComplete()) {
+            throw new IllegalArgumentException("Can gui day du schoolCode, academicYear va groupCode");
+        }
+        if (request.getSchoolCode() == null) return;
+        if (!highSchoolRepository.existsByCodeAndDeletedAtIsNull(request.getSchoolCode())) {
+            throw new ResourceNotFoundException("Truong THPT khong ton tai");
+        }
+        Set<String> groupSubjects = subjectGroupRepository
+                .findSubjectGroupsBySchool(request.getSchoolCode(), request.getAcademicYear()).stream()
+                .filter(row -> request.getGroupCode().equals(row.getGroupCode()))
+                .map(row -> row.getSubjectCode().trim())
+                .collect(Collectors.toSet());
+        if (groupSubjects.isEmpty()) {
+            throw new ResourceNotFoundException("Khong co nhom mon dang cong bo cho truong va nam hoc da chon");
+        }
+        if (!groupSubjects.equals(new LinkedHashSet<>(requestedCodes))) {
+            throw new IllegalArgumentException("Cac mon khong khop nhom mon trong nam hoc da chon; hay tai lai nhom mon");
+        }
     }
 }

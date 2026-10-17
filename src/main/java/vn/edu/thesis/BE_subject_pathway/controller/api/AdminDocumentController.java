@@ -6,6 +6,8 @@ import jakarta.validation.Valid;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -85,9 +87,23 @@ public class AdminDocumentController {
         return ApiResponse.ok(documents.list(status, size, cursor));
     }
 
+    @GetMapping("/deleted")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Operation(summary = "List soft-deleted documents", description = "Only SUPER_ADMIN can inspect documents retained for restoration or graph unpublication.")
+    public ApiResponse<Map<String, Object>> listDeleted(@RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String cursor) {
+        return ApiResponse.ok(documents.listDeleted(size, cursor));
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Get a managed document", description = "Deleted documents are returned only to SUPER_ADMIN; other roles receive 404.")
+    public ApiResponse<Map<String, Object>> get(@PathVariable String id, Authentication authentication) {
+        return ApiResponse.ok(documents.document(id, isSuperAdmin(authentication)));
+    }
+
     @GetMapping("/{id}/download-url")
-    public ApiResponse<String> download(@PathVariable String id) {
-        return ApiResponse.ok(documents.downloadUrl(id));
+    public ApiResponse<String> download(@PathVariable String id, Authentication authentication) {
+        return ApiResponse.ok(documents.downloadUrl(id, isSuperAdmin(authentication)));
     }
 
     @PostMapping("/{id}/retry-extraction")
@@ -98,18 +114,45 @@ public class AdminDocumentController {
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Request or perform document soft-delete", description = "ADMIN changes the document to DELETE_REQUESTED. SUPER_ADMIN soft-deletes immediately, cancels active extraction jobs, snapshots and removes unpublished drafts, and retains published groups and R2 objects.")
+    @Operation(summary = "Request or perform document soft-delete", description = "ADMIN creates a DELETE_REQUESTED approval request. SUPER_ADMIN soft-deletes immediately. Approval/soft-delete retains recoverable drafts and source objects while published groups remain available in Neo4j.")
     public ApiResponse<Void> deleteDocument(@PathVariable String id, Principal principal, Authentication authentication) {
-        boolean superAdmin = authentication.getAuthorities().stream()
-                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUPER_ADMIN"));
-        if (superAdmin) documents.softDeleteDocument(id, principal.getName());
-        else documents.requestDelete(id, principal.getName());
+        if (isSuperAdmin(authentication)) {
+            documents.softDeleteDocument(id, principal.getName());
+        } else {
+            documents.requestDelete(id, principal.getName());
+        }
         return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/{id}/unpublish")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Operation(summary = "Unpublish a soft-deleted document", description = "Marks verified source groups unpublished in PostgreSQL and queues deletion of each group node and its attached Neo4j relationships when no other published source remains. Returns HTTP 202 while the worker applies the projection; poll the graph-sync job until SYNCED.")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> unpublish(@PathVariable String id, Principal principal) {
+        return graphOperationResponse(documents.unpublishDocument(id, principal.getName()));
+    }
+
+    @PostMapping("/{id}/restore")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Operation(summary = "Restore a soft-deleted document", description = "Restores PostgreSQL drafts and retained object-store versions, republishes document-owned graph groups, and queues a retryable Neo4j projection that recreates missing group nodes and relationships from PostgreSQL.")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> restore(@PathVariable String id, Principal principal) {
+        return graphOperationResponse(documents.restoreDocument(id, principal.getName()));
+    }
+
+    @GetMapping("/{id}/graph-sync/{jobId}")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @Operation(summary = "Get document graph synchronization status", description = "Returns PENDING, RUNNING, RETRY, or SYNCED for the lifecycle job. SYNCED means the Neo4j projection completed.")
+    public ApiResponse<Map<String, Object>> graphSyncStatus(@PathVariable String id, @PathVariable String jobId) {
+        return ApiResponse.ok(documents.documentGraphSyncJob(id, jobId));
+    }
+
+    private ResponseEntity<ApiResponse<Map<String, Object>>> graphOperationResponse(Map<String, Object> result) {
+        HttpStatus status = "SYNCED".equals(result.get("graphSyncStatus")) ? HttpStatus.OK : HttpStatus.ACCEPTED;
+        return ResponseEntity.status(status).body(ApiResponse.ok(result));
     }
 
     @PostMapping("/{id}/approve-delete")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
-    @Operation(summary = "Approve document soft-delete", description = "Soft-deletes a DELETE_REQUESTED document and removes its unpublished drafts after writing audit snapshots.")
+    @Operation(summary = "Approve document soft-delete request", description = "Completes a DELETE_REQUESTED document soft-delete, cancels active extraction, and retains recoverable drafts and source objects.")
     public ApiResponse<Void> approveDelete(@PathVariable String id, Principal principal) {
         documents.approveDelete(id, principal.getName());
         return ApiResponse.ok(null);
@@ -185,5 +228,10 @@ public class AdminDocumentController {
         return authentication.getAuthorities().stream()
                 .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUPER_ADMIN"))
                 ? "DRAFT,SUBMITTED" : "DRAFT";
+    }
+
+    private boolean isSuperAdmin(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUPER_ADMIN"));
     }
 }

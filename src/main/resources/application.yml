@@ -55,12 +55,14 @@ app:
     cookie-secure: ${AUTH_COOKIE_SECURE:true}
     redis-key-prefix: ${AUTH_REDIS_KEY_PREFIX:subject-pathway:auth:}
   storage:
-    r2-endpoint: ${R2_ENDPOINT:}
-    r2-bucket: ${R2_BUCKET:}
-    r2-region: ${R2_REGION:auto}
-    r2-access-key-id: ${R2_ACCESS_KEY_ID:}
-    r2-secret-access-key: ${R2_SECRET_ACCESS_KEY:}
-    presigned-url-ttl-seconds: ${R2_PRESIGNED_URL_TTL_SECONDS:300}
+    provider: ${OBJECT_STORAGE_PROVIDER:MINIO}
+    endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}}
+    bucket: ${OBJECT_STORAGE_BUCKET:}
+    region: ${OBJECT_STORAGE_REGION:us-east-1}
+    access-key-id: ${OBJECT_STORAGE_ACCESS_KEY_ID:}
+    secret-access-key: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:}
+    presigned-url-ttl-seconds: ${OBJECT_STORAGE_PRESIGNED_URL_TTL_SECONDS:300}
     max-upload-bytes: ${PDF_MAX_UPLOAD_BYTES:52428800}
   bootstrap:
     super-admin-username: ${BOOTSTRAP_SUPER_ADMIN_USERNAME:}

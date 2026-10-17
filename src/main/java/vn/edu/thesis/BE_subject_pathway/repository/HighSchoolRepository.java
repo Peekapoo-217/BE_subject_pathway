@@ -15,5 +15,7 @@ public interface HighSchoolRepository extends JpaRepository<HighSchool, String> 
     /**
      * Lay toan bo truong THPT sap xep theo ma truong tang dan.
      */
-    List<HighSchool> findAllByOrderByCodeAsc();
+    List<HighSchool> findAllByDeletedAtIsNullOrderByCodeAsc();
+
+    boolean existsByCodeAndDeletedAtIsNull(String code);
 }

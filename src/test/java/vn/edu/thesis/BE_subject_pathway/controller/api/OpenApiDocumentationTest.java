@@ -21,7 +21,8 @@ class OpenApiDocumentationTest {
     private static final List<Class<?>> CONTROLLERS = List.of(
             AdmissionSearchController.class,
             HighSchoolController.class,
-            SubjectController.class);
+            SubjectController.class,
+            AdminHighSchoolController.class);
 
     @Test
     @DisplayName("Moi controller va endpoint deu co mo ta OpenAPI")
@@ -51,12 +52,14 @@ class OpenApiDocumentationTest {
             }
         }
 
-        assertEquals(6, documentedEndpointCount, "Can cap nhat test khi them endpoint moi");
+        assertEquals(14, documentedEndpointCount, "Can cap nhat test khi them endpoint moi");
     }
 
     private boolean isEndpoint(Method method) {
         return method.isAnnotationPresent(GetMapping.class)
-                || method.isAnnotationPresent(PostMapping.class);
+                || method.isAnnotationPresent(PostMapping.class)
+                || method.isAnnotationPresent(org.springframework.web.bind.annotation.PutMapping.class)
+                || method.isAnnotationPresent(org.springframework.web.bind.annotation.DeleteMapping.class);
     }
 
     private String endpointName(Class<?> controller, Method method) {

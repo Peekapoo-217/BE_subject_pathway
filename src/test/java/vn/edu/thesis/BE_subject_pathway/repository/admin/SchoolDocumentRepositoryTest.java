@@ -17,9 +17,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 class SchoolDocumentRepositoryTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -61,5 +67,28 @@ class SchoolDocumentRepositoryTest {
 
         assertThrows(SQLException.class, () -> SchoolDocumentRepository.mapDraftRow(rs));
         verify(rs, never()).getArray("sourcePages");
+    }
+
+    @Test
+    void restoreLegacyDraftQueryEscapesJsonbOperatorsAndBindsOnlyDocumentId() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        List<String> statements = new ArrayList<>();
+        List<Object[]> parameters = new ArrayList<>();
+        when(jdbc.update(anyString(), any(Object[].class))).thenAnswer(invocation -> {
+            statements.add(invocation.getArgument(0));
+            Object rawParameters = invocation.getArgument(1);
+            parameters.add(rawParameters instanceof Object[] values ? values : new Object[] {rawParameters});
+            return 1;
+        });
+
+        String documentId = "d79be0cb-a597-4d2b-af07-b2c552e32ee8";
+        assertEquals(1, new SchoolDocumentRepository(jdbc).restoreDocument(documentId));
+
+        String snapshotSql = statements.get(0);
+        assertTrue(snapshotSql.contains("audit.details ?? 'documentVersionId'"));
+        assertTrue(snapshotSql.contains("audit.details ?? 'groupCode'"));
+        assertTrue(snapshotSql.contains("audit.details ?? 'groupName'"));
+        assertEquals(1, parameters.get(0).length);
+        assertEquals(documentId, parameters.get(0)[0]);
     }
 }

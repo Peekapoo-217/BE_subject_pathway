@@ -44,12 +44,74 @@ class AdmissionSearchServiceImplTest {
     @Mock
     private vn.edu.thesis.BE_subject_pathway.repository.SubjectRepository subjectRepository;
 
+    @Mock
+    private vn.edu.thesis.BE_subject_pathway.repository.HighSchoolRepository highSchoolRepository;
+
+    @Mock
+    private vn.edu.thesis.BE_subject_pathway.repository.SubjectGroupRepository subjectGroupRepository;
+
     private AdmissionSearchServiceImpl service;
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         service = new AdmissionSearchServiceImpl(
-                combinationRepository, offerRepository, subjectRepository);
+                combinationRepository, offerRepository, subjectRepository, highSchoolRepository, subjectGroupRepository);
+    }
+
+    private SubjectSearchRequest schoolRequest() {
+        return new SubjectSearchRequest(List.of("PHYSICS"), null, "TCV", "2026", "G01");
+    }
+
+    private void publishedSchoolGroup() {
+        when(highSchoolRepository.existsByCodeAndDeletedAtIsNull("TCV")).thenReturn(true);
+        var group = mock(vn.edu.thesis.BE_subject_pathway.repository.projection.SubjectGroupFlatProjection.class);
+        when(group.getGroupCode()).thenReturn("G01");
+        when(group.getSubjectCode()).thenReturn("PHYSICS");
+        when(subjectGroupRepository.findSubjectGroupsBySchool("TCV", "2026")).thenReturn(List.of(group));
+    }
+
+    @Test
+    void validatesSchoolYearAndGroupBeforeSearchingCombinations() {
+        publishedSchoolGroup();
+        var combination = mock(CombinationProjection.class);
+        when(combination.getCombinationId()).thenReturn("A00");
+        when(combinationRepository.findValidCombinations(List.of("PHYSICS"))).thenReturn(List.of(combination));
+        when(offerRepository.countMajorsAndUniversities(List.of("A00"), "100")).thenReturn(stats(0, 0));
+
+        assertEquals(1, service.searchBySubjects(schoolRequest()).getTotalCombinations());
+        verify(subjectGroupRepository).findSubjectGroupsBySchool("TCV", "2026");
+    }
+
+    @Test
+    void rejectsSubjectsFromAnotherAcademicYear() {
+        publishedSchoolGroup();
+        var request = schoolRequest();
+        request.setSubjectCodes(List.of("HISTORY"));
+
+        assertThrows(IllegalArgumentException.class, () -> service.searchBySubjects(request));
+        verifyNoInteractions(combinationRepository, offerRepository, subjectRepository);
+    }
+
+    @Test
+    void rejectsMissingOrUnpublishedGroupForSelectedYear() {
+        when(highSchoolRepository.existsByCodeAndDeletedAtIsNull("TCV")).thenReturn(true);
+        assertThrows(ResourceNotFoundException.class, () -> service.searchBySubjects(schoolRequest()));
+        verify(subjectGroupRepository).findSubjectGroupsBySchool("TCV", "2026");
+        verifyNoInteractions(combinationRepository, offerRepository, subjectRepository);
+    }
+
+    @Test
+    void rejectsDeletedSchoolBeforeLookingUpGroups() {
+        assertThrows(ResourceNotFoundException.class, () -> service.searchBySubjects(schoolRequest()));
+        verifyNoInteractions(subjectGroupRepository, combinationRepository, offerRepository, subjectRepository);
+    }
+
+    @Test
+    void rejectsIncompleteSchoolYearContext() {
+        var request = schoolRequest();
+        request.setGroupCode(null);
+        assertThrows(IllegalArgumentException.class, () -> service.searchBySubjects(request));
+        verifyNoInteractions(highSchoolRepository, subjectGroupRepository, combinationRepository);
     }
 
     private static SearchStatsProjection stats(long majors, long universities) {

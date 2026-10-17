@@ -16,6 +16,7 @@ public class Neo4jSubjectGroupRepository {
 
     private static final String FIND_ACADEMIC_YEARS = """
             MATCH (:HighSchool {code: $schoolCode})-[:OFFERS_GROUP]->(group:SubjectGroup)
+            WHERE coalesce(group.is_published, true) = true
             RETURN DISTINCT group.academic_year AS academicYear
             ORDER BY academicYear DESC
             """;
@@ -23,6 +24,7 @@ public class Neo4jSubjectGroupRepository {
     private static final String FIND_SUBJECT_GROUPS = """
             MATCH (:HighSchool {code: $schoolCode})-[:OFFERS_GROUP]->(group:SubjectGroup)
             WHERE group.academic_year = $academicYear
+              AND coalesce(group.is_published, true) = true
             MATCH (group)-[:INCLUDES_SUBJECT]->(subject:Subject)
             WITH group, collect(DISTINCT {code: subject.code, name: subject.name}) AS subjects
             WHERE size(subjects) >= 1 AND size(subjects) <= 4

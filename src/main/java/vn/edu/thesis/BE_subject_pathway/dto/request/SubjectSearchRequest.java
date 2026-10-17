@@ -1,6 +1,8 @@
 package vn.edu.thesis.BE_subject_pathway.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.AssertTrue;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -27,6 +29,29 @@ public class SubjectSearchRequest {
     @Size(max = 20, message = "Ma truong dai hoc qua dai")
     @Pattern(regexp = "\\S+", message = "Ma truong dai hoc khong hop le")
     private String universityCode;
+
+    @Size(max = 30)
+    @Pattern(regexp = "\\S+")
+    private String schoolCode;
+
+    @Size(max = 20)
+    @Pattern(regexp = "\\d{4}(?:-\\d{4})?", message = "Nam hoc phai co dang YYYY hoac YYYY-YYYY")
+    private String academicYear;
+
+    @Size(max = 30)
+    @Pattern(regexp = "\\S+")
+    private String groupCode;
+
+    @JsonIgnore
+    @AssertTrue(message = "Can gui day du schoolCode, academicYear va groupCode")
+    public boolean isSchoolGroupContextComplete() {
+        return (schoolCode == null && academicYear == null && groupCode == null)
+                || (schoolCode != null && academicYear != null && groupCode != null);
+    }
+
+    public SubjectSearchRequest(List<String> subjectCodes, String universityCode) {
+        this(subjectCodes, universityCode, null, null, null);
+    }
 
     public SubjectSearchRequest(List<String> subjectCodes) {
         this(subjectCodes, null);

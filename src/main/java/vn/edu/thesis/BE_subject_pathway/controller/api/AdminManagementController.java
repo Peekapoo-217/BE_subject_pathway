@@ -3,7 +3,6 @@ package vn.edu.thesis.BE_subject_pathway.controller.api;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,10 +35,6 @@ public class AdminManagementController {
     public record PasswordRequest(@NotBlank @Size(min=6,max=200, message="Mật khẩu phải có từ 6 đến 200 ký tự") String password) {}
     public record CreateCombinationRequest(@NotBlank String display, @Size(min=2,max=10) List<String> subjectCodes) {}
     public record DisplayRequest(@NotBlank String display) {}
-    public record LlmConfigRequest(@NotBlank String purpose, @NotBlank String endpoint,
-                                   @NotBlank String model, @jakarta.validation.constraints.Size(max=2000) String apiKey,
-                                   boolean active) {}
-
     @GetMapping("/users")
     public ApiResponse<Map<String,Object>> users(@RequestParam(defaultValue="20") int size,
             @RequestParam(required=false) String cursor, @RequestParam(required=false) String role) {
@@ -80,11 +75,4 @@ public class AdminManagementController {
         management.archiveCombination(id); return ApiResponse.ok(null);
     }
 
-    @GetMapping("/llm-configurations")
-    public ApiResponse<List<Map<String,Object>>> llmConfigurations() { return ApiResponse.ok(management.listLlmConfigurations()); }
-    @PostMapping("/llm-configurations")
-    public ApiResponse<Void> saveLlmConfiguration(Principal principal, @Valid @RequestBody LlmConfigRequest request) {
-        management.saveLlmConfiguration(principal.getName(), request.purpose(), request.endpoint(), request.model(), request.apiKey(), request.active());
-        return ApiResponse.ok(null);
-    }
 }

@@ -21,7 +21,7 @@ import vn.edu.thesis.BE_subject_pathway.service.admin.AdminManagementService;
 import vn.edu.thesis.BE_subject_pathway.service.admin.AuthService;
 import vn.edu.thesis.BE_subject_pathway.service.admin.RedisSessionStore;
 import vn.edu.thesis.BE_subject_pathway.service.admin.CursorCodec;
-import vn.edu.thesis.BE_subject_pathway.service.admin.R2StorageService;
+import vn.edu.thesis.BE_subject_pathway.service.admin.ObjectStorageService;
 import vn.edu.thesis.BE_subject_pathway.service.admin.SchoolDocumentService;
 import vn.edu.thesis.BE_subject_pathway.service.admin.ProvinceCatalogService;
 import vn.edu.thesis.BE_subject_pathway.service.admin.TokenService;
@@ -39,7 +39,7 @@ class AdminWiringTest {
             .withBean(RedisSessionStore.class, () -> mock(RedisSessionStore.class))
             .withBean(DataSource.class, () -> mock(DataSource.class))
             .withBean(RestClient.Builder.class, RestClient::builder)
-            .withBean(R2StorageService.class, () -> mock(R2StorageService.class))
+            .withBean(ObjectStorageService.class, () -> mock(ObjectStorageService.class))
             .withBean(CursorCodec.class, () -> new CursorCodec("test-secret-with-at-least-32-bytes"))
             .withBean(TokenService.class, () -> new TokenService("test-secret-with-at-least-32-bytes", 900))
             .withBean(PasswordEncoder.class, BCryptPasswordEncoder::new);

@@ -11,6 +11,7 @@ import java.awt.image.BufferedImage;
 import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
+import org.mockito.InOrder;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -21,7 +22,7 @@ import vn.edu.thesis.BE_subject_pathway.repository.admin.SchoolDocumentRepositor
 
 class SchoolDocumentServiceTest {
     private final SchoolDocumentRepository repository = mock(SchoolDocumentRepository.class);
-    private final R2StorageService storage = mock(R2StorageService.class);
+    private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final CursorCodec cursors = mock(CursorCodec.class);
     private final ProvinceCatalogService provinces = mock(ProvinceCatalogService.class);
     private final SchoolDocumentService service = new SchoolDocumentService(repository, storage, cursors, provinces, 50L * 1024 * 1024);
@@ -124,7 +125,31 @@ class SchoolDocumentServiceTest {
     }
 
     @Test
-    void superAdminSoftDeleteCancelsJobsAndArchivesUnpublishedDrafts() {
+    void downloadUrlUsesTheActiveObjectStorageWhenTheFileExists() {
+        when(repository.findDocument("document")).thenReturn(activeDocument());
+        when(repository.latestObjectKey("document", false)).thenReturn("school-documents/document/file.pdf");
+        when(storage.exists("school-documents/document/file.pdf")).thenReturn(true);
+        when(storage.presignedGet("school-documents/document/file.pdf")).thenReturn("http://minio:9000/bucket/file.pdf");
+
+        assertEquals("http://minio:9000/bucket/file.pdf", service.downloadUrl("document", false));
+        verify(storage).presignedGet("school-documents/document/file.pdf");
+    }
+
+    @Test
+    void downloadUrlReturnsNotFoundWhenTheObjectIsNotInTheActiveStorage() {
+        when(repository.findDocument("document")).thenReturn(activeDocument());
+        when(repository.latestObjectKey("document", false)).thenReturn("school-documents/document/old-r2-file.pdf");
+        when(storage.exists("school-documents/document/old-r2-file.pdf")).thenReturn(false);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.downloadUrl("document", false));
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        verify(storage, never()).presignedGet(anyString());
+    }
+
+    @Test
+    void documentSoftDeleteCancelsJobsAndSoftDeletesDraftsWithoutChangingGraph() {
         when(repository.softDeleteDocument("document", "admin")).thenReturn(1);
 
         service.softDeleteDocument("document", "admin");
@@ -132,8 +157,45 @@ class SchoolDocumentServiceTest {
         var order = inOrder(repository);
         order.verify(repository).softDeleteDocument("document", "admin");
         order.verify(repository).cancelActiveJobs("document");
-        order.verify(repository).deleteUnpublishedDraftsForDocument("document", "admin");
+        order.verify(repository).softDeleteDraftsForDocument("document", "admin");
         order.verify(repository).auditDocumentSoftDeleted("document", "admin", "DOCUMENT_SOFT_DELETED");
+    }
+
+    @Test
+    void adminDeleteRequestOnlyChangesRequestStateAndWritesAudit() {
+        when(repository.requestDelete("document", "admin")).thenReturn(1);
+
+        service.requestDelete("document", "admin");
+
+        verify(repository).auditDocumentSoftDeleted("document", "admin", "DOCUMENT_DELETE_REQUESTED");
+        verify(repository, never()).cancelActiveJobs(anyString());
+        verify(repository, never()).softDeleteDraftsForDocument(anyString(), anyString());
+    }
+
+    @Test
+    void deletedDocumentDetailIsHiddenUnlessCallerExplicitlyAllowsDeletedRows() {
+        Map<String, Object> deleted = new java.util.HashMap<>();
+        deleted.put("id", "document");
+        deleted.put("deletedAt", java.time.Instant.now());
+        deleted.put("objectKey", "private/object.pdf");
+        when(repository.findDocument("document")).thenReturn(deleted);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.document("document", false));
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        Map<String, Object> superAdminView = service.document("document", true);
+        assertEquals("document", superAdminView.get("id"));
+        org.junit.jupiter.api.Assertions.assertFalse(superAdminView.containsKey("objectKey"));
+    }
+
+    @Test
+    void deletedDocumentListIsAnExplicitSuperAdminServicePath() {
+        when(repository.list("DELETED", true, null, null, 21)).thenReturn(List.of());
+
+        service.listDeleted(20, null);
+
+        verify(repository).list("DELETED", true, null, null, 21);
     }
 
     @Test
@@ -143,8 +205,182 @@ class SchoolDocumentServiceTest {
         service.approveDelete("document", "super-admin");
 
         verify(repository).cancelActiveJobs("document");
-        verify(repository).deleteUnpublishedDraftsForDocument("document", "super-admin");
+        verify(repository).softDeleteDraftsForDocument("document", "super-admin");
         verify(repository).auditDeleteApproved("document", "super-admin");
+    }
+
+    @Test
+    void unpublishRequiresDeletedDocumentAndQueuesScopedGraphProjection() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "status", "DELETED", "deletedAt", java.time.Instant.now(),
+                "schoolCode", "SCHOOL", "academicYear", "2026", "graphPublicationStatus", "PUBLISHED")));
+        when(repository.isSchoolActiveForDocument("document")).thenReturn(true);
+        when(repository.documentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.publishedDocumentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.documentSourceGroupsAreActive("document")).thenReturn(true);
+        when(repository.setDocumentGraphPublication("document", false)).thenReturn(1);
+        when(repository.createDocumentGraphSyncJob("document", "SCHOOL", "2026", List.of("A01")))
+                .thenReturn("graph-job");
+
+        Map<String, Object> result = service.unpublishDocument("document", "super-admin");
+
+        assertEquals("UNPUBLISHED", result.get("graphPublicationStatus"));
+        assertEquals("PENDING", result.get("graphSyncStatus"));
+        verify(repository).createDocumentGraphSyncJob("document", "SCHOOL", "2026", List.of("A01"));
+    }
+
+    @Test
+    void unpublishRejectsAmbiguousGroupWithoutChangingPublicationState() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "deletedAt", java.time.Instant.now(), "schoolCode", "SCHOOL", "academicYear", "2026",
+                "graphPublicationStatus", "PUBLISHED")));
+        when(repository.isSchoolActiveForDocument("document")).thenReturn(true);
+        when(repository.hasUnattributedGroupSource("document")).thenReturn(true);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.unpublishDocument("document", "super-admin"));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        verify(repository, never()).setDocumentGraphPublication(anyString(), anyBoolean());
+    }
+
+    @Test
+    void restoreChecksEveryRetainedObjectBeforeChangingPostgres() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "deletedAt", java.time.Instant.now(), "schoolCode", "SCHOOL", "academicYear", "2026",
+                "graphPublicationStatus", "UNPUBLISHED")));
+        when(repository.isSchoolActiveForDocument("document")).thenReturn(true);
+        when(repository.documentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.publishedDocumentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.documentSourceGroupsAreActive("document")).thenReturn(true);
+        when(repository.objectKeys("document")).thenReturn(List.of("missing-object"));
+        when(storage.exists("missing-object")).thenReturn(false);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.restoreDocument("document", "super-admin"));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        verify(repository, never()).restoreDocument(anyString());
+    }
+
+    @Test
+    void restoringDocumentRepublishesAndQueuesGraphProjectionAfterCheckingMinio() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "deletedAt", java.time.Instant.now(), "schoolCode", "SCHOOL", "academicYear", "2026",
+                "graphPublicationStatus", "UNPUBLISHED")));
+        when(repository.isSchoolActiveForDocument("document")).thenReturn(true);
+        when(repository.objectKeys("document")).thenReturn(List.of("source-object"));
+        when(storage.exists("source-object")).thenReturn(true);
+        when(repository.documentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.publishedDocumentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.documentSourceGroupsAreActive("document")).thenReturn(true);
+        when(repository.restoreDocument("document")).thenReturn(1);
+        when(repository.createDocumentGraphSyncJob("document", "SCHOOL", "2026", List.of("A01")))
+                .thenReturn("graph-job");
+
+        Map<String, Object> result = service.restoreDocument("document", "super-admin");
+
+        assertEquals("PUBLISHED", result.get("graphPublicationStatus"));
+        assertEquals("PENDING", result.get("graphSyncStatus"));
+        assertEquals("graph-job", result.get("graphSyncJobId"));
+        verify(repository).restoreDocument("document");
+        verify(repository).createDocumentGraphSyncJob("document", "SCHOOL", "2026", List.of("A01"));
+        verify(repository).auditDocumentRestored("document", "super-admin", "graph-job");
+
+        InOrder restoreOrder = inOrder(repository);
+        restoreOrder.verify(repository).restoreDocument("document");
+        restoreOrder.verify(repository).createDocumentGraphSyncJob("document", "SCHOOL", "2026", List.of("A01"));
+    }
+
+    @Test
+    void restoreIsIdempotentAndReturnsTheOriginalGraphJob() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "status", "UPLOADED", "schoolCode", "SCHOOL", "academicYear", "2026",
+                "graphPublicationStatus", "PUBLISHED")));
+        when(repository.restoreReplay("document")).thenReturn(Map.of(
+                "graphSyncStatus", "RETRY", "graphSyncJobId", "existing-job"));
+
+        Map<String, Object> result = service.restoreDocument("document", "super-admin");
+
+        assertEquals("PUBLISHED", result.get("graphPublicationStatus"));
+        assertEquals("RETRY", result.get("graphSyncStatus"));
+        assertEquals("existing-job", result.get("graphSyncJobId"));
+        verify(repository, never()).objectKeys(anyString());
+        verify(repository, never()).restoreDocument(anyString());
+        verify(repository, never()).createDocumentGraphSyncJob(anyString(), anyString(), anyString(), anyList());
+    }
+
+    @Test
+    void restoreFromStillPublishedGraphQueuesAnIdempotentUpsert() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "deletedAt", java.time.Instant.now(), "statusBeforeDelete", "PUBLISHED",
+                "schoolCode", "SCHOOL", "academicYear", "2026", "graphPublicationStatus", "PUBLISHED")));
+        when(repository.isSchoolActiveForDocument("document")).thenReturn(true);
+        when(repository.documentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.publishedDocumentGroupCodes("document")).thenReturn(List.of("A01"));
+        when(repository.documentSourceGroupsAreActive("document")).thenReturn(true);
+        when(repository.objectKeys("document")).thenReturn(List.of("source-object"));
+        when(storage.exists("source-object")).thenReturn(true);
+        when(repository.restoreDocument("document")).thenReturn(1);
+        when(repository.createDocumentGraphSyncJob("document", "SCHOOL", "2026", List.of("A01")))
+                .thenReturn("restore-job");
+
+        Map<String, Object> result = service.restoreDocument("document", "super-admin");
+
+        assertEquals("PUBLISHED", result.get("graphPublicationStatus"));
+        assertEquals("PENDING", result.get("graphSyncStatus"));
+        assertEquals("restore-job", result.get("graphSyncJobId"));
+        verify(repository).createDocumentGraphSyncJob("document", "SCHOOL", "2026", List.of("A01"));
+    }
+
+    @Test
+    void restoreRejectsIncompletePublishedGroupProvenanceBeforeChangingPostgres() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "deletedAt", java.time.Instant.now(), "statusBeforeDelete", "PUBLISHED",
+                "schoolCode", "SCHOOL", "academicYear", "2026", "graphPublicationStatus", "PUBLISHED")));
+        when(repository.isSchoolActiveForDocument("document")).thenReturn(true);
+        when(repository.documentGroupCodes("document")).thenReturn(List.of());
+        when(repository.publishedDocumentGroupCodes("document")).thenReturn(List.of("A01"));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.restoreDocument("document", "super-admin"));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        verify(repository, never()).objectKeys(anyString());
+        verify(repository, never()).restoreDocument(anyString());
+    }
+
+    @Test
+    void repeatingUnpublishReturnsExistingRetryJobInsteadOfEnqueueingAnother() {
+        when(repository.lockLifecycleDocument("document")).thenReturn(new java.util.HashMap<>(Map.of(
+                "id", "document", "status", "DELETED", "deletedAt", java.time.Instant.now(),
+                "schoolCode", "SCHOOL", "academicYear", "2026", "graphPublicationStatus", "UNPUBLISHED")));
+        when(repository.latestDocumentGraphSyncJob("document")).thenReturn(Map.of(
+                "graphSyncJobId", "existing-job", "graphSyncStatus", "RETRY"));
+
+        Map<String, Object> result = service.unpublishDocument("document", "super-admin");
+
+        assertEquals("RETRY", result.get("graphSyncStatus"));
+        assertEquals("existing-job", result.get("graphSyncJobId"));
+        verify(repository, never()).createDocumentGraphSyncJob(anyString(), anyString(), anyString(), anyList());
+    }
+
+    @Test
+    void graphSyncStatusLookupRequiresAJobOwnedByTheDocument() {
+        when(repository.findDocumentGraphSyncJob("document", "job")).thenReturn(Map.of(
+                "graphSyncJobId", "job", "documentId", "document", "graphSyncStatus", "SYNCED"));
+
+        Map<String, Object> result = service.documentGraphSyncJob("document", "job");
+
+        assertEquals("SYNCED", result.get("graphSyncStatus"));
+        verify(repository).findDocumentGraphSyncJob("document", "job");
+    }
+
+    private Map<String, Object> activeDocument() {
+        Map<String, Object> document = new java.util.HashMap<>();
+        document.put("id", "document");
+        document.put("deletedAt", null);
+        return document;
     }
 
     @Test

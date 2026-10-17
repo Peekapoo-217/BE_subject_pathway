@@ -71,11 +71,11 @@ public class SecurityConfig {
                             response.getWriter().write("{\"success\":false,\"message\":\"Yêu cầu không được phép. Vui lòng tải lại trang và thử lại.\"}");
                         }))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/internal/llm/**").permitAll()
                         .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout", "/api/v1/auth/csrf").permitAll()
                         .requestMatchers("/api/v1/auth/**").authenticated()
                         .requestMatchers("/api/v1/admin/documents/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                        .requestMatchers("/api/v1/admin/high-schools/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/admissions/**", "/api/v1/high-schools/**", "/api/v1/subjects/**").permitAll()
                         .requestMatchers(
