@@ -20,6 +20,7 @@ class OpenApiDocumentationTest {
 
     private static final List<Class<?>> CONTROLLERS = List.of(
             AdmissionSearchController.class,
+            AdmissionCombinationController.class,
             HighSchoolController.class,
             SubjectController.class,
             AdminHighSchoolController.class);
@@ -52,7 +53,7 @@ class OpenApiDocumentationTest {
             }
         }
 
-        assertEquals(14, documentedEndpointCount, "Can cap nhat test khi them endpoint moi");
+        assertEquals(17, documentedEndpointCount, "Can cap nhat test khi them endpoint moi");
     }
 
     private boolean isEndpoint(Method method) {

@@ -237,3 +237,24 @@ Migration V8 được tạo trong source nhưng chưa áp dụng lên database n
 - [x] Thêm unit test cho mô tả endpoint và thứ tự khôi phục PostgreSQL trước khi tạo graph-sync job.
 - [x] Kiểm tra: focused backend tests 50/50; `mvnw.cmd -o -q test` — 148 test, 0 lỗi/thất bại, 13 integration test bị skip.
 - [ ] Chưa chạy request thật với PostgreSQL, MinIO và Neo4j; chưa có migration schema mới.
+
+## API đối chiếu nhóm môn cho chatbot — 2026-10-18
+
+- [x] Thêm `GET /api/v1/admissions/combinations/{code}` trả các nhãn công khai mới nhất, giữ `canonicalCombinationId` null nếu chưa được xác minh.
+- [x] Thêm `POST /api/v1/high-schools/{schoolCode}/subject-groups/comparisons`: chọn năm học mới nhất khi không truyền, đối chiếu môn yêu thích/không thích, điểm có thang, tự nhận xét và mức tự tin theo từng nhóm.
+- [x] Liên kết tổ hợp chỉ khi mọi thành phần là môn học và nhóm bao phủ đủ môn; đường ngành chỉ trả khi có offer thật trong PostgreSQL, kèm năm tuyển sinh/phương thức/nguồn. Không tính điểm phần trăm hoặc thứ hạng tổng hợp.
+- [x] Cập nhật Swagger và test API/service cho nhóm có/không có offer, mã tổ hợp, dữ liệu điểm sai thang và response comparison.
+- [x] Kiểm tra: `mvnw.cmd -o test` — 156 test, 0 lỗi/thất bại, 13 test tích hợp bị skip.
+- [ ] Chưa smoke test các query native với PostgreSQL thực hoặc đọc nhóm môn từ Neo4j thật; không có migration schema trong thay đổi này.
+
+## RAG Pipeline R1a-R3c Backend contract - 2026-10-20
+
+- Added `POST /api/v1/admissions/combinations/resolve-by-subjects` as an additive exact-composition resolver. It canonicalizes subject aliases, requires the full component set to match exactly, excludes aptitude components, and returns labels with source URL, source period, and retrieval timestamp. The existing `/api/v1/admissions/search-by-subjects` capability-search behavior is unchanged.
+- Extended subject-group comparison input with optional `admissionYear` and `methodCode`; `academicYear` remains the separate THPT group-year selector. The service applies admission filters only to matching offer paths and returns per-group facts without an aggregate ranking.
+- Verification: focused tests for `AdmissionCombinationControllerTest`, `AdmissionCombinationLabelServiceTest`, and `SubjectGroupComparisonServiceTest` passed (12 tests); full `mvnw.cmd test` passed (161 tests, 0 failures, 13 skipped) on Java 21. Database-dependent tests were skipped; no live PostgreSQL, Neo4j query, or HTTP smoke test was run.
+
+## Combination resolver PostgreSQL timestamp compatibility fix - 2026-10-20
+
+- Fixed the native PostgreSQL projection contract: `timestamptz` is mapped as `Instant`, then converted to UTC `OffsetDateTime` in the service response. This prevents the combination catalogue endpoint from failing when Hibernate supplies an `Instant`.
+- Regression test covers UTC conversion and null timestamp handling.
+- Verification: full `mvnw.cmd test -q` passed (162 tests, 0 failures, 0 errors, 13 skipped) on Java 21. Rebuilt Docker Backend returned HTTP 200 for `GET /api/v1/admissions/combinations/A00` and `POST /api/v1/admissions/combinations/resolve-by-subjects`; the RAG API `/health` returned healthy with Neo4j connected. Checks were read-only. No chatbot request or paid LLM call was made.
