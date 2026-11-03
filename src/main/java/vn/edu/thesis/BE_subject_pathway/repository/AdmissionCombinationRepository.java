@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 
 import vn.edu.thesis.BE_subject_pathway.entity.AdmissionCombination;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationLabelProjection;
+import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationComponentProjection;
+import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationCatalogueLabelProjection;
 import vn.edu.thesis.BE_subject_pathway.repository.projection.CombinationProjection;
 
 /**
@@ -41,6 +43,42 @@ public interface AdmissionCombinationRepository
         List<CombinationProjection> findValidCombinations(
                         @Param("subjectCodes") List<String> subjectCodes);
 
+        /** Exact subject-only composition lookup; capability matching remains in searchBySubjects. */
+        @Query(value = """
+                        SELECT c.combination_id AS combinationId,
+                               c.combination_display AS combinationDisplay,
+                               c.component_count AS componentCount
+                        FROM admission_combinations c
+                        JOIN admission_combination_components comp
+                          ON comp.combination_id = c.combination_id
+                        WHERE c.is_active = true
+                          AND c.component_count = :componentCount
+                        GROUP BY c.combination_id, c.combination_display, c.component_count
+                        HAVING COUNT(*) = :componentCount
+                           AND COUNT(DISTINCT CASE
+                               WHEN comp.component_type = 'SUBJECT'
+                                AND comp.subject_code IN (:subjectCodes)
+                               THEN comp.subject_code
+                           END) = :componentCount
+                        ORDER BY c.combination_id
+                        """, nativeQuery = true)
+        List<CombinationProjection> findExactSubjectCombinations(
+                        @Param("subjectCodes") List<String> subjectCodes,
+                        @Param("componentCount") int componentCount);
+
+        @Query(value = """
+                        SELECT comp.combination_id AS combinationId,
+                               comp.component_type AS componentType,
+                               comp.component_code AS componentCode,
+                               comp.component_name AS componentName,
+                               comp.subject_code AS subjectCode
+                        FROM admission_combination_components comp
+                        WHERE comp.combination_id IN (:combinationIds)
+                        ORDER BY comp.combination_id, comp.component_code
+                        """, nativeQuery = true)
+        List<CombinationComponentProjection> findComponentsByCombinationIds(
+                        @Param("combinationIds") List<String> combinationIds);
+
         /**
          * Label rows from the newest imported catalogue snapshot for matched
          * combinations.
@@ -56,5 +94,38 @@ public interface AdmissionCombinationRepository
                         ORDER BY l.canonical_combination_id, l.code
                         """, nativeQuery = true)
         List<CombinationLabelProjection> findLabelsByCombinationIds(
+                        @Param("combinationIds") List<String> combinationIds);
+
+        @Query(value = """
+                        SELECT l.code AS code,
+                               l.subject_details AS subjectDetails,
+                               l.canonical_combination_id AS canonicalCombinationId,
+                               l.source_url AS sourceUrl,
+                               l.source_period AS sourcePeriod,
+                               l.retrieved_at AS retrievedAt
+                        FROM admission_combination_labels l
+                        WHERE upper(l.code) = upper(:code)
+                          AND l.retrieved_at = (
+                              SELECT MAX(latest.retrieved_at)
+                              FROM admission_combination_labels latest
+                              WHERE upper(latest.code) = upper(:code))
+                        ORDER BY l.subject_details, l.canonical_combination_id NULLS LAST
+                        """, nativeQuery = true)
+        List<CombinationCatalogueLabelProjection> findLatestLabelsByCode(@Param("code") String code);
+
+        @Query(value = """
+                        SELECT l.canonical_combination_id AS canonicalCombinationId,
+                               l.code AS code,
+                               l.subject_details AS subjectDetails,
+                               l.source_url AS sourceUrl,
+                               l.source_period AS sourcePeriod,
+                               l.retrieved_at AS retrievedAt
+                        FROM admission_combination_labels l
+                        WHERE l.canonical_combination_id IN (:combinationIds)
+                          AND l.retrieved_at = (
+                              SELECT MAX(latest.retrieved_at) FROM admission_combination_labels latest)
+                        ORDER BY l.canonical_combination_id, l.code, l.subject_details
+                        """, nativeQuery = true)
+        List<CombinationCatalogueLabelProjection> findLatestCatalogueLabelsByCombinationIds(
                         @Param("combinationIds") List<String> combinationIds);
 }

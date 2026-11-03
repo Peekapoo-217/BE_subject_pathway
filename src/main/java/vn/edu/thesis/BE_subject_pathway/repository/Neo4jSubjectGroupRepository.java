@@ -33,7 +33,6 @@ public class Neo4jSubjectGroupRepository {
                    group.academic_year AS academicYear,
                    subjects
             ORDER BY groupCode
-            LIMIT 100
             """;
 
     private final Driver driver;

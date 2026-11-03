@@ -2,6 +2,7 @@ package vn.edu.thesis.BE_subject_pathway.controller.api;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,12 +14,14 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectGroupComparisonResponse;
 import vn.edu.thesis.BE_subject_pathway.dto.response.HighSchoolDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectGroupDto;
 import vn.edu.thesis.BE_subject_pathway.exception.ResourceNotFoundException;
 import vn.edu.thesis.BE_subject_pathway.service.HighSchoolService;
 import vn.edu.thesis.BE_subject_pathway.service.SubjectGroupRecommendationService;
+import vn.edu.thesis.BE_subject_pathway.service.SubjectGroupComparisonService;
 
 /**
  * Test slice WebMvc cho HighSchoolController: dinh dang ApiResponse
@@ -38,6 +41,9 @@ class HighSchoolControllerTest {
 
     @MockitoBean
     private SubjectGroupRecommendationService recommendationService;
+
+    @MockitoBean
+    private SubjectGroupComparisonService comparisonService;
 
     @Test
     @DisplayName("GET /high-schools tra ve 200 va ApiResponse danh sach truong")
@@ -81,5 +87,23 @@ class HighSchoolControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.message").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("POST subject-group comparison maps a student profile to criterion comparison")
+    void compareSubjectGroups_ok() throws Exception {
+        when(comparisonService.compare(
+                org.mockito.ArgumentMatchers.eq("THPT01"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new SubjectGroupComparisonResponse("THPT01", "2026-2027", null, List.of()));
+
+        mockMvc.perform(post("/api/v1/high-schools/THPT01/subject-groups/comparisons")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"preferredSubjectCodes":["MATH"],"dislikedSubjectCodes":[],"gradesBySubjectCode":{},"selfReportedStrengthBySubjectCode":{},"confidenceBySubjectCode":{}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.schoolCode").value("THPT01"))
+                .andExpect(jsonPath("$.data.academicYear").value("2026-2027"));
     }
 }

@@ -20,11 +20,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import vn.edu.thesis.BE_subject_pathway.dto.ApiResponse;
 import jakarta.validation.Valid;
 import vn.edu.thesis.BE_subject_pathway.dto.request.SubjectGroupRecommendationRequest;
+import vn.edu.thesis.BE_subject_pathway.dto.request.SubjectGroupComparisonRequest;
 import vn.edu.thesis.BE_subject_pathway.dto.response.HighSchoolDto;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectGroupRecommendationsResponse;
+import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectGroupComparisonResponse;
 import vn.edu.thesis.BE_subject_pathway.dto.response.SubjectGroupDto;
 import vn.edu.thesis.BE_subject_pathway.service.HighSchoolService;
 import vn.edu.thesis.BE_subject_pathway.service.SubjectGroupRecommendationService;
+import vn.edu.thesis.BE_subject_pathway.service.SubjectGroupComparisonService;
 
 /**
  * API tra cuu truong THPT va nhom mon hoc theo truong.
@@ -38,6 +41,7 @@ public class HighSchoolController {
 
     private final HighSchoolService highSchoolService;
     private final SubjectGroupRecommendationService recommendationService;
+    private final SubjectGroupComparisonService comparisonService;
 
     /**
      * Danh sach toan bo truong THPT (sap xep theo ma tang dan).
@@ -135,5 +139,26 @@ public class HighSchoolController {
             @RequestBody SubjectGroupRecommendationRequest request) {
         return ResponseEntity.ok(ApiResponse.ok(
                 recommendationService.recommend(schoolCode, request)));
+    }
+
+    @PostMapping("/{schoolCode}/subject-groups/comparisons")
+    @Operation(
+            summary = "Doi chieu nhom mon theo thong tin hoc sinh",
+            description = "Tra ve cac nhom dang cong bo theo nam hoc, so thich, mon khong yeu thich, "
+                    + "diem do hoc sinh khai va muc tu tin. Khong tinh diem phan tram hoac xep hang tong hop. "
+                    + "Lien ket toi nganh chi duoc tra khi co duong offer va to hop day du trong du lieu.")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Doi chieu thanh cong"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Profile hoac ma mon khong hop le",
+                content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Khong tim thay truong hoac nhom dang cong bo",
+                content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "Loi truy van co so du lieu",
+                content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+    })
+    public ResponseEntity<ApiResponse<SubjectGroupComparisonResponse>> compareSubjectGroups(
+            @PathVariable String schoolCode,
+            @Valid @RequestBody SubjectGroupComparisonRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(comparisonService.compare(schoolCode, request)));
     }
 }
